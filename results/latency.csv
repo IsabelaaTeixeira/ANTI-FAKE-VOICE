@@ -1,0 +1,3 @@
+arquitetura,n,media_ms,mediana_ms,p95_ms,max_ms,cabe_na_janela_1s,cabe_no_orcamento_call_150ms
+MFCC + Random Forest,300,63.0709988699679,58.97508199996082,70.57186404981623,795.4902629999197,True,True
+Wav2Vec2 + Regressão Logística,60,186.65689113334642,169.68132100009825,200.31494725030825,966.2059980000777,True,False

@@ -1,0 +1,5 @@
+channel,n,accuracy,f1,eer
+clean,24,1.0,1.0,0.0
+gsm,24,1.0,1.0,0.0
+volte,24,1.0,1.0,0.0
+vonr,24,1.0,1.0,0.0

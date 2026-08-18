@@ -1,0 +1,27 @@
+.venv/
+.venv-tts/
+tools/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.claude/
+
+# dados brutos e derivados: grandes e/ou regeneráveis pelos scripts do pipeline
+data/raw/
+data/channeled/
+data/raw/windows*/
+data/*.csv
+data/*.npz
+data/my_voice_reference.wav
+data/cloned_voice*.wav
+
+# modelos treinados: grandes e regeneráveis (ver README, seção "Treinar")
+models/*.pkl
+models/*.pt
+models/*.joblib
+
+# tabela de predição janela-a-janela (18MB, regenerável); as tabelas-resumo ficam versionadas
+results/cv_predictions.csv
+
+# artigos de referência têm direitos autorais de terceiros — só o índice fica versionado
+artigos/*.pdf

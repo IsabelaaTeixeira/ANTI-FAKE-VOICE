@@ -1,0 +1,18 @@
+Para sustentar a ideia de "O Canal/Codec atrapalha a detecção" e "Data Augmentation"
+Esses dois artigos são a espinha dorsal do seu problema e da sua solução de treinar a IA com distorções:
+
+Multi-Granularity Adaptive Time-Frequency Attention Framework for Audio.pdf: Este artigo é um achado de ouro! Ele aborda diretamente a detecção de áudio deepfake sob "degradações do mundo real", citando explicitamente a compressão por codecs de voz e perda de pacotes. Você vai usar as referências deste artigo para justificar por que a detecção de deepfakes falha no mundo real e como o treinamento com dados degradados resolve isso.
+
+Human Detection of Voice-Cloned Speech Under GSM, VoLTE.pdf: Este é o artigo que inspirou a sua premissa de que os codecs de alta fidelidade (como o AMR-WB do VoLTE e, por extensão, o EVS do VoNR) afetam a detecção. Ele também te dá a metodologia de como simular os canais usando ferramentas como o FFmpeg, o que você vai precisar para a sua Prova de Conceito.
+
+Para sustentar a "Detecção em Streaming (Janelas curtas) e RTC"
+O seu sistema não analisa um áudio inteiro depois de gravado, mas sim pacotes em tempo real (RTC). Para justificar isso, use:
+
+RTCFake Speech Deepfake Detection in RealTime Communication.pdf: Este artigo foca exatamente na ameaça dos deepfakes em cenários de comunicação em tempo real (RTC) e como as distorções da transmissão complicam a detecção. É a justificativa perfeita de que o cenário ao vivo é um desafio diferente do offline.
+
+Defense Against Synthetic Speech Real-Time.pdf: É daqui que você tira a arquitetura base do seu classificador. O artigo propõe a formulação do problema como "classificação em streaming", segmentando o áudio em janelas de 1 segundo e usando modelos leves para inferência de baixa latência. Ele também valida o uso do dataset DEEP-VOICE, que vai acelerar a sua vida.
+
+Para sustentar a "Implantação no Nó MEC (Telecom-Cloud)"
+Onde o seu código vai rodar no mundo real? Na antena da operadora.
+
+Privacy-Aware AI for Multimedia Streams.pdf: Este artigo é a referência que você precisa para provar que a sua ideia faz sentido arquitetonicamente. Ele propõe um framework de IA "edge-compatible" (compatível com a borda) desenhado especificamente para ecossistemas Telecom-Cloud. Ele justifica o porquê de rodar a detecção na infraestrutura da operadora (MEC), garantindo baixa latência e segurança na rede sem ferir a privacidade do usuário.

@@ -1,0 +1,13 @@
+speaker,channel,n,accuracy,f1,eer
+biden,clean,5542,1.0,1.0,0.0
+biden,gsm,5542,0.9998195597257308,0.9998988161489426,0.0
+biden,volte,5542,1.0,1.0,0.0
+biden,vonr,5542,1.0,1.0,0.0
+ryan,clean,3007,1.0,1.0,0.0
+ryan,gsm,3007,1.0,1.0,0.0
+ryan,volte,3007,1.0,1.0,0.0
+ryan,vonr,3007,1.0,1.0,0.0
+taylor,clean,5542,1.0,1.0,0.0
+taylor,gsm,5542,1.0,1.0,0.0
+taylor,volte,5542,0.9998195597257308,0.9998988161489426,0.0
+taylor,vonr,5542,1.0,1.0,0.0
