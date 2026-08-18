@@ -93,7 +93,7 @@ data/my_voice_reference.wav / cloned_voice.wav  # voz da pesquisadora, real e cl
 src/                    # todo o pipeline, um script por etapa (ver seção abaixo)
 models/                 # modelos treinados (.joblib) — não versionados, regeneráveis
 results/                # tabelas finais (.csv) — as pequenas ficam versionadas, cv_predictions.csv (18MB) não
-artigos/                # literatura de referência; só o índice REFS.txt é versionado (PDFs têm direitos autorais de terceiros)
+artigos/                # literatura de referência, uso pessoal — não versionado (ver seção Referências)
 tools/                  # FFmpeg custom e código de referência EVS compilados — não versionados
 ```
 
@@ -240,7 +240,6 @@ passo 4.)
 
 ## Referências
 
-A pasta `artigos/` (leitura de apoio, uso pessoal) não é versionada neste repositório.
 Os artigos que embasam o projeto são:
 
 - **Human Detection of Voice-Cloned Speech Under GSM, VoLTE** — inspirou a premissa
