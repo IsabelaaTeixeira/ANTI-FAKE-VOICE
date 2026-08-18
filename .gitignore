@@ -23,5 +23,5 @@ models/*.joblib
 # tabela de predição janela-a-janela (18MB, regenerável); as tabelas-resumo ficam versionadas
 results/cv_predictions.csv
 
-# artigos de referência têm direitos autorais de terceiros — só o índice fica versionado
-artigos/*.pdf
+# artigos de referência: não versionados (uso pessoal, ver README para a lista)
+artigos/

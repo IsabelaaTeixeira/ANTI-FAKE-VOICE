@@ -240,6 +240,20 @@ passo 4.)
 
 ## Referências
 
-A relação completa dos artigos usados e o papel de cada um está em
-[`artigos/REFS.txt`](artigos/REFS.txt). Os PDFs em si não são versionados neste
-repositório por terem direitos autorais de terceiros.
+A pasta `artigos/` (leitura de apoio, uso pessoal) não é versionada neste repositório.
+Os artigos que embasam o projeto são:
+
+- **Human Detection of Voice-Cloned Speech Under GSM, VoLTE** — inspirou a premissa
+  central do projeto (codecs de telecom prejudicam a detecção de voz clonada) e a
+  metodologia de simular os canais via FFmpeg.
+- **Multi-Granularity Adaptive Time-Frequency Attention Framework for Audio** — aborda
+  detecção de deepfake sob degradações do mundo real (compressão por codec, perda de
+  pacotes), base para justificar por que Data Augmentation com canal simulado ajuda.
+- **RTCFake: Speech Deepfake Detection in Real-Time Communication** — foca na ameaça em
+  cenários de comunicação em tempo real, justificando o recorte do projeto para RTC ao
+  vivo (e não só análise offline).
+- **Defense Against Synthetic Speech in Real-Time** — origem da arquitetura de
+  classificação em streaming (janelas de 1s, modelos leves de baixa latência) e valida
+  o uso do dataset DEEP-VOICE.
+- **Privacy-Aware AI for Multimedia Streams** — referência para a arquitetura de IA
+  compatível com borda (edge), justificando rodar a detecção num nó MEC da operadora.
