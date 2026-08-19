@@ -112,9 +112,7 @@ Fatia cada áudio em janelas de 1 segundo e aplica os canais escolhidos:
 python -m src.build_dataset --channels clean gsm volte vonr
 ```
 
-Por decisão do projeto (não técnica), os locutores `musk` e `trump` são excluídos
-automaticamente (ver `EXCLUDED_SPEAKERS` em `build_dataset.py`). Gera
-`data/manifest.csv`.
+Gera `data/manifest.csv`.
 
 ### 3. Extrair os atributos
 
@@ -223,9 +221,6 @@ passo 4.)
 
 ## Limitações e decisões metodológicas
 
-- **Locutores excluídos por decisão do projeto**: `musk` e `trump` foram removidos do
-  dataset DEEP-VOICE por decisão pessoal da pesquisadora, não por motivo técnico —
-  isso reduz um pouco a quantidade de dados disponível.
 - **EER em vez de só acurácia**: o dataset é desbalanceado entre classes/canais, e
   acurácia crua esconde isso; EER é o padrão em biometria/detecção de fraude.
 - **Amostra pequena para a voz própria** (~15s reais + ~9s clonadas, antes de aplicar
