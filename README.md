@@ -219,6 +219,32 @@ As tabelas pequenas ficam versionadas em `results/`:
 `channel_model_table.csv`, não é versionado por ser grande — é regenerado pelo
 passo 4.)
 
+### Gráficos
+
+Gerados por [`src/make_diagram.py`](src/make_diagram.py) e
+[`src/make_figures.py`](src/make_figures.py) a partir das tabelas acima —
+rode os dois scripts de novo se os dados mudarem.
+
+**Desenho do experimento**
+
+![Pipeline do experimento](results/figures/fig0_pipeline_experimento.png)
+
+**Efeito do canal de telecom, com e sem Data Augmentation**
+
+![EER por canal e regime](results/figures/fig1_eer_canal_regime.png)
+
+**Latência de inferência vs. orçamentos de tempo real**
+
+![Latência das duas arquiteturas](results/figures/fig2_latencia.png)
+
+**O gap de generalização: locutor conhecido vs. desconhecido**
+
+![Locutor conhecido vs. desconhecido](results/figures/fig3_conhecido_vs_desconhecido.png)
+
+**Voz própria: antes e depois do retreino**
+
+![Voz própria antes e depois do retreino](results/figures/fig4_voz_propria_antes_depois.png)
+
 ## Limitações e decisões metodológicas
 
 - **EER em vez de só acurácia**: o dataset é desbalanceado entre classes/canais, e
