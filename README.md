@@ -245,19 +245,6 @@ rode os dois scripts de novo se os dados mudarem.
 
 ![Voz própria antes e depois do retreino](results/figures/fig4_voz_propria_antes_depois.png)
 
-## Limitações e decisões metodológicas
-
-- **EER em vez de só acurácia**: o dataset é desbalanceado entre classes/canais, e
-  acurácia crua esconde isso; EER é o padrão em biometria/detecção de fraude.
-- **Amostra pequena para a voz própria** (~15s reais + ~9s clonadas, antes de aplicar
-  canal): os números dos testes com a voz da pesquisadora são ilustrativos, não
-  estatisticamente equivalentes aos ~centenas/milhares de janelas por locutor do
-  dataset original.
-- **Retreino de uma sessão só tende a decorar, não generalizar**: incluir a voz da
-  pesquisadora no retreino chegou a 100% de acurácia nos dados usados no retreino, mas
-  falhou numa gravação nova dela mesma — evidência de que o modelo memorizou aquela
-  sessão específica de gravação, não aprendeu uma representação generalizável da voz.
-  Isso é reportado como achado/limitação, não escondido.
 
 ## Referências
 
