@@ -104,17 +104,16 @@ python3 -m venv .venv-tts
 ## Estrutura de pastas
 
 ```
-data/raw/KAGGLE/       # dataset DEEP-VOICE original (baixado manualmente do Kaggle), não versionado
-data/raw/ASVSPOOF2019/  # dataset ASVspoof 2019 LA (baixado manualmente), não versionado
-data/manifest.csv / manifest_asvspoof.csv  # tabelas mestre — geradas por build_dataset*.py
-data/features_*.csv/.npz  # atributos extraídos — gerados por features.py, não versionados (regeneráveis)
-data/my_voice_reference.wav / cloned_voice.wav  # sua voz de referência e clonada — grave a sua, não versionados
-src/                    # todo o pipeline, um script por etapa (ver seção abaixo)
-models/                 # modelos treinados (.joblib) — não versionados, regeneráveis
-results/                # tabelas finais (.csv) — as pequenas ficam versionadas, cv_predictions.csv (18MB) não
-results/figures/        # gráficos (versionados) — inclui os subgrupos deepvoice/ e asvspoof/ do plot_metrics.py
-artigos/                # literatura de referência, uso pessoal — não versionado (ver seção Referências)
-tools/                  # FFmpeg custom e código de referência EVS compilados — não versionados
+data/raw/KAGGLE/                                 # dataset DEEP-VOICE original 
+data/raw/ASVSPOOF2019/                           # dataset ASVspoof 2019 LA
+data/manifest.csv / manifest_asvspoof.csv        # tabelas mestre — geradas por build_dataset*.py
+data/features_*.csv/.npz                         # atributos extraídos — gerados por features.py
+data/my_voice_reference.wav / cloned_voice.wav   # sua voz de referência e clonada — grave a sua
+src/                                             # todo o pipeline, um script por etapa (ver seção abaixo)
+models/                                          # modelos treinados (.joblib) 
+results/                                         # tabelas finais (.csv) — as pequenas ficam versionadas, cv_predictions.csv (18MB) não
+results/figures/                                 # gráficos (versionados) — inclui os subgrupos deepvoice/ e asvspoof/ do plot_metrics.py
+tools/                                           # FFmpeg custom e código de referência EVS compilados 
 ```
 
 ## Passo a passo: treinar, testar e usar cada ferramenta
