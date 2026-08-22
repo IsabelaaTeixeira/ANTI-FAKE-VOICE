@@ -8,23 +8,35 @@ canais, usando o mesmo pipeline de fatiamento + simulação de canal.
 
 Uso:
     python -m src.own_voice_pretrain_test
+    python -m src.own_voice_pretrain_test --dataset asvspoof
 """
+import argparse
+
 import joblib
 import pandas as pd
 from sklearn.metrics import f1_score
 
-from src.features import MFCC_OUT, META_COLS
+from src.features import META_COLS
 from src.own_voice_ceiling import build_own_voice_rows, eer
 
-MODEL_PATH = "models/mfcc_rf_final.joblib"
+MODEL_PATHS = {
+    "deepvoice": "models/mfcc_rf_final.joblib",
+    "asvspoof": "models/mfcc_rf_final_asvspoof.joblib",
+}
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset", choices=["deepvoice", "asvspoof"], default="deepvoice")
+    args = parser.parse_args()
+    model_path = MODEL_PATHS[args.dataset]
+    out_path = f"results/own_voice_pretrain_table_{args.dataset}.csv" if args.dataset != "deepvoice" else "results/own_voice_pretrain_table.csv"
+
     print("Fatiando e aplicando os 4 canais na sua voz (real + clonada)...")
     own_df = build_own_voice_rows()
 
     feat_cols = [c for c in own_df.columns if c not in META_COLS]
-    clf = joblib.load(MODEL_PATH)
+    clf = joblib.load(model_path)
 
     own_eval = own_df.sort_values(["label", "channel", "filepath"]).reset_index(drop=True)
     proba_all = clf.predict_proba(own_eval[feat_cols].values)[:, 1]
@@ -51,8 +63,8 @@ def main() -> None:
     summary = pd.DataFrame(rows)
     pd.set_option("display.float_format", lambda x: f"{x:.3f}")
     print(summary.to_string(index=False))
-    summary.to_csv("results/own_voice_pretrain_table.csv", index=False)
-    print("\nTabela salva em results/own_voice_pretrain_table.csv")
+    summary.to_csv(out_path, index=False)
+    print(f"\nTabela salva em {out_path}")
 
 
 if __name__ == "__main__":

@@ -19,14 +19,25 @@ documentada como achado, não escondida. Os detalhes de cada etapa, com os núme
 estão nas tabelas de `results/` e no relatório técnico completo (gerado durante o
 desenvolvimento, fora deste repositório).
 
+O projeto foi validado num segundo dataset bem maior, o **ASVspoof 2019 LA** (~122 mil
+gravações, split oficial treino/validação/teste, com tipos de ataque de síntese nunca
+vistos no teste) — o mesmo padrão de resultado se confirmou lá. Também foi adicionado
+um 5º canal simulando **microfone/ambiente de captação** (não só codec de telecom): ele
+ajuda o classificador pesado (Wav2Vec2) a generalizar melhor para um microfone de
+notebook nunca visto no treino, mas não resolve o caso de um headset sem fio — provável
+sinal de que esse hardware aplica processamento próprio de áudio (redução de ruído,
+ajuste automático de volume) que uma simulação não reproduz.
+
 ## As frentes do projeto
 
-O projeto tem 5 frentes, cada uma com seu próprio script em `src/`:
+O projeto tem 6 frentes, cada uma com seu próprio script em `src/`:
 
 1. **Simulação de canal** (`channel_sim.py`) — recodifica um áudio limpo como se
    tivesse passado por uma ligação GSM, VoLTE ou VoNR/5G, usando os codecs de verdade
    que essas redes usam (não é só adicionar ruído: é o mesmo algoritmo de compressão
-   com perdas que uma operadora usa).
+   com perdas que uma operadora usa). Um 5º canal, `mic_sim.py`, simula gravação por
+   microfone/ambiente (reverb + ruído + coloração de frequência) em vez de codec —
+   com dois perfis (mic de notebook e headset close-talk).
 2. **Extração de atributos** (`features.py`) — transforma cada 1 segundo de áudio em
    números que um classificador consegue usar: um jeito leve e rápido (MFCC, 26
    números) e um jeito pesado e mais rico (embedding de uma rede neural pré-treinada,
@@ -34,14 +45,21 @@ O projeto tem 5 frentes, cada uma com seu próprio script em `src/`:
 3. **Treino e avaliação com separação por locutor** (`train.py` + `evaluate.py`) —
    treina os classificadores garantindo que nenhum locutor de teste tenha aparecido no
    treino (Leave-One-Speaker-Out), e mede o desempenho com Acurácia, F1 e EER
-   (Equal Error Rate) por canal.
+   (Equal Error Rate) por canal. Os dois scripts aceitam `--dataset asvspoof` para
+   rodar no dataset maior (`build_dataset_asvspoof.py`), que já tem split oficial
+   treino/validação/teste em vez de LOSO manual.
 4. **Latência** (`latency_bench.py`) — cronometra cada arquitetura para saber se ela
    cabe no orçamento de tempo de uma ligação ao vivo.
 5. **Testes com a própria voz** (`clone_voice.py`, `live_demo.py`,
    `speaker_dependent_eval.py`, `own_voice_ceiling.py`,
-   `own_voice_pretrain_test.py`) — a parte mais "prática": clona a voz da
-   pesquisadora com IA de verdade (XTTS v2) e testa o classificador ao vivo pelo
-   microfone, contra a gravação clonada, e antes/depois de um retreino com essa voz.
+   `own_voice_pretrain_test.py`) — a parte mais "prática": clona a **sua** voz com IA
+   de verdade (XTTS v2) e testa o classificador ao vivo pelo microfone, contra a
+   gravação clonada, e antes/depois de um retreino com essa voz — cada pessoa grava e
+   usa a própria voz, as gravações não são fornecidas no repositório.
+   `live_demo.py` roda tanto com MFCC quanto com Wav2Vec2 (`--features wav2vec2`).
+6. **Gráficos de diagnóstico** (`plot_metrics.py`) — curva DET (trade-off completo de
+   erro), t-SNE dos embeddings (pra ver se o classificador separa por canal/locutor
+   em vez de por sinal genuíno de síntese) e espectrogramas comparativos entre canais.
 
 ## Setup
 
@@ -87,12 +105,14 @@ python3 -m venv .venv-tts
 
 ```
 data/raw/KAGGLE/       # dataset DEEP-VOICE original (baixado manualmente do Kaggle), não versionado
-data/manifest.csv       # tabela mestre: filepath, speakers, label, channel — gerada por build_dataset.py
+data/raw/ASVSPOOF2019/  # dataset ASVspoof 2019 LA (baixado manualmente), não versionado
+data/manifest.csv / manifest_asvspoof.csv  # tabelas mestre — geradas por build_dataset*.py
 data/features_*.csv/.npz  # atributos extraídos — gerados por features.py, não versionados (regeneráveis)
-data/my_voice_reference.wav / cloned_voice.wav  # voz da pesquisadora, real e clonada — não versionados
+data/my_voice_reference.wav / cloned_voice.wav  # sua voz de referência e clonada — grave a sua, não versionados
 src/                    # todo o pipeline, um script por etapa (ver seção abaixo)
 models/                 # modelos treinados (.joblib) — não versionados, regeneráveis
 results/                # tabelas finais (.csv) — as pequenas ficam versionadas, cv_predictions.csv (18MB) não
+results/figures/        # gráficos (versionados) — inclui os subgrupos deepvoice/ e asvspoof/ do plot_metrics.py
 artigos/                # literatura de referência, uso pessoal — não versionado (ver seção Referências)
 tools/                  # FFmpeg custom e código de referência EVS compilados — não versionados
 ```
@@ -109,10 +129,21 @@ separado em `REAL/` e `FAKE/`.
 Fatia cada áudio em janelas de 1 segundo e aplica os canais escolhidos:
 
 ```bash
-python -m src.build_dataset --channels clean gsm volte vonr
+python -m src.build_dataset --channels clean gsm volte vonr mic
 ```
 
-Gera `data/manifest.csv`.
+Gera `data/manifest.csv`. O canal `mic` simula microfone/ambiente em vez de codec
+(sorteia entre dois perfis, notebook e headset, por janela).
+
+Pra rodar no **ASVspoof** em vez do DEEP-VOICE, use `build_dataset_asvspoof.py`
+(baixe o dataset em `data/raw/ASVSPOOF2019/LA/` antes):
+
+```bash
+python -m src.build_dataset_asvspoof --channels clean gsm volte vonr --cap 20
+```
+
+`--cap` limita quantas gravações entram por combinação locutor×ataque (o dataset
+inteiro tem ~122 mil gravações; o cap evita passar de 1 milhão de janelas).
 
 ### 3. Extrair os atributos
 
@@ -120,6 +151,9 @@ Gera `data/manifest.csv`.
 python -m src.features --kind mfcc
 python -m src.features --kind wav2vec2   # mais lento; retoma sozinho se for interrompido
 ```
+
+Some `--dataset asvspoof` em qualquer um dos comandos acima (e nos passos 4-5
+abaixo) para rodar no ASVspoof em vez do DEEP-VOICE (padrão).
 
 ### 4. Treinar com validação cruzada Leave-One-Speaker-Out
 
@@ -129,7 +163,8 @@ python -m src.train
 
 Treina os 4 modelos (MFCC/Wav2Vec2 × canal-limpo/canal-augmentado), sempre testando
 num locutor que ficou de fora do treino. Salva as predições em
-`results/cv_predictions.csv`.
+`results/cv_predictions.csv`. No ASVspoof (`--dataset asvspoof`), treina uma vez no
+split oficial de treino e testa nos splits de validação/teste, em vez de LOSO.
 
 ### 5. Gerar a tabela de avaliação (Acurácia, F1, EER por canal)
 
@@ -139,7 +174,18 @@ python -m src.evaluate
 
 Gera `results/channel_model_table.csv`.
 
-### 6. Medir a latência (MFCC+RF vs. Wav2Vec2+LR)
+### 6. Gráficos de diagnóstico (curva DET, t-SNE, espectrogramas)
+
+```bash
+python -m src.plot_metrics --dataset deepvoice
+```
+
+Gera `results/figures/deepvoice/` (ou `asvspoof/`, trocando o `--dataset`) com a
+curva DET por canal, um t-SNE dos embeddings colorido por canal e por locutor (pra
+investigar se o classificador usa algum atalho em vez de sinal genuíno de síntese),
+e uma comparação visual (espectrograma) entre os canais.
+
+### 7. Medir a latência (MFCC+RF vs. Wav2Vec2+LR)
 
 ```bash
 python -m src.latency_bench
@@ -148,10 +194,11 @@ python -m src.latency_bench
 Gera `results/latency.csv`, comparando com o orçamento de 150ms de uma ligação ao
 vivo (ITU-T G.114) e com a duração da própria janela (1000ms).
 
-### 7. Testar ao vivo pelo microfone
+### 8. Testar ao vivo pelo microfone
 
 ```bash
 python -m src.live_demo --seconds 15
+python -m src.live_demo --seconds 15 --features wav2vec2   # modelo mais pesado, mais preciso
 # ou, com um modelo específico:
 python -m src.live_demo --seconds 15 --model models/mfcc_rf_with_own_voice.joblib
 ```
@@ -161,18 +208,20 @@ mostrando a probabilidade de ser clonada. **Rode este comando você mesma no seu
 próprio terminal** — como ele espera sua fala em tempo real, rodar por uma ferramenta
 automatizada não permite reagir à contagem regressiva.
 
-### 8. Clonar a própria voz com IA de verdade (XTTS v2)
+### 9. Clonar a própria voz com IA de verdade (XTTS v2)
 
 ```bash
 .venv-tts/bin/python src/clone_voice.py
 ```
 
-Requer `data/my_voice_reference.wav` (uma gravação de referência sua). Gera
-`data/cloned_voice.wav`. Roda no ambiente virtual separado `.venv-tts/` (ver Setup).
-Ao usar, você concorda com a licença CPML da Coqui (uso livre para pesquisa/não
-comercial).
+Requer `data/my_voice_reference.wav`: grave ~15s da **sua própria voz**, falando
+naturalmente, e salve com esse nome. O arquivo não é fornecido no repositório — cada
+pessoa grava e usa a própria voz, não as gravações de outra pessoa (e o `.gitignore`
+já impede que esse arquivo seja commitado). Gera `data/cloned_voice.wav`. Roda no
+ambiente virtual separado `.venv-tts/` (ver Setup). Ao usar, você concorda com a
+licença CPML da Coqui (uso livre para pesquisa/não comercial).
 
-### 9. Testar um locutor que já estava no treino (referência de "teto")
+### 10. Testar um locutor que já estava no treino (referência de "teto")
 
 ```bash
 python -m src.speaker_dependent_eval
@@ -182,24 +231,24 @@ Avalia o modelo final em locutores que ele já viu durante o treino (Taylor Swif
 Biden, Ryan) — não é um teste de generalização, é uma referência de quanto o
 desempenho cai quando o locutor é desconhecido (LOSO) vs. conhecido.
 
-### 10. Testar a própria voz contra o modelo original (sem retreinar)
+### 11. Testar a própria voz contra o modelo original (sem retreinar)
 
 ```bash
 python -m src.own_voice_pretrain_test
 ```
 
-Mesma metodologia do passo 9, mas com a voz da pesquisadora (real + clonada) contra o
-modelo que nunca a viu — usando os mesmos 4 canais simulados.
+Mesma metodologia do passo 10, mas com a sua voz (real + clonada, gravadas nos passos
+anteriores) contra o modelo que nunca a viu — usando os mesmos 4 canais simulados.
 
-### 11. Retreinar incluindo a própria voz, e reavaliar
+### 12. Retreinar incluindo a própria voz, e reavaliar
 
 ```bash
 python -m src.own_voice_ceiling
 ```
 
-Junta a voz da pesquisadora (real + clonada, nos 4 canais) ao dataset e retreina,
+Junta a sua voz (real + clonada, nos 4 canais) ao dataset e retreina,
 salvando `models/mfcc_rf_with_own_voice.joblib`. Avalia no que acabou de entrar no
-treino (referência de teto, igual ao passo 9) — depois, repita o passo 7 com
+treino (referência de teto, igual ao passo 10) — depois, repita o passo 8 com
 `--model models/mfcc_rf_with_own_voice.joblib` para ver se isso generaliza para uma
 gravação *nova*, fora do que entrou no retreino.
 
@@ -210,6 +259,7 @@ As tabelas pequenas ficam versionadas em `results/`:
 | Arquivo | O que mostra |
 |---|---|
 | `channel_model_table.csv` | Acurácia/F1/EER por canal × modelo × regime (limpo vs. augmentado) — resultado central do projeto |
+| `channel_model_table_asvspoof.csv` | O mesmo, no dataset ASVspoof (split oficial treino/validação/teste) |
 | `latency.csv` | Latência (média/mediana/p95) de cada arquitetura, vs. os orçamentos de tempo |
 | `speaker_dependent_table.csv` | Teto de desempenho em locutores conhecidos (Taylor/Biden/Ryan) |
 | `own_voice_pretrain_table.csv` | Voz própria contra o modelo original (antes de qualquer retreino) |
@@ -245,6 +295,24 @@ rode os dois scripts de novo se os dados mudarem.
 
 ![Voz própria antes e depois do retreino](results/figures/fig4_voz_propria_antes_depois.png)
 
+Gerados por [`src/plot_metrics.py`](src/plot_metrics.py) (passo 6), em
+`results/figures/deepvoice/` e `results/figures/asvspoof/`:
+
+**Curva DET — trade-off completo de erro por canal (Wav2Vec2, DEEP-VOICE)**
+
+![Curva DET Wav2Vec2](results/figures/deepvoice/det_wav2vec2.png)
+
+**t-SNE dos atributos MFCC — colorido por canal (esq.) e por locutor (dir.)**
+
+![t-SNE MFCC](results/figures/deepvoice/tsne_mfcc.png)
+
+O canal GSM forma um grupo isolado (evidência de que o MFCC pode usar o canal como
+atalho), enquanto colorir por locutor nunca forma grupo nenhum (sem atalho por
+locutor) — o mesmo padrão se repete no ASVspoof (`results/figures/asvspoof/`).
+
+**Espectrogramas comparativos entre canais**
+
+![Espectrogramas comparativos](results/figures/deepvoice/spectrograms_comparativo.png)
 
 ## Referências
 

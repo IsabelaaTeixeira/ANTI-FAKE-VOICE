@@ -79,6 +79,19 @@ def _decode_to_wav(encoded: Path, dst: Path) -> None:
     encoded.unlink(missing_ok=True)
 
 
+def normalize_clean(src: Path, dst: Path) -> None:
+    """Aplica a MESMA normalização de loudness usada em gsm/volte/vonr (-16 LUFS)
+    ao canal 'clean', sem nenhum codec — corrige a assimetria de volume entre
+    REAL e FAKE encontrada na auditoria de silêncio (fase T do relatório):
+    o canal clean nunca passava por normalização, só os canais com codec."""
+    _run([
+        str(FFMPEG), "-y", "-i", str(src),
+        "-ar", "16000", "-ac", "1", "-t", "1.0",
+        "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+        str(dst),
+    ])
+
+
 def check_amr_encoders_available() -> bool:
     """Confere se o FFmpeg compilado tem os encoders AMR necessários."""
     if not FFMPEG.exists():

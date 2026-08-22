@@ -11,9 +11,12 @@ ou destino.
 Uso:
     python -m src.build_dataset --channels clean
     python -m src.build_dataset --channels clean gsm volte   # após corrigir o ffmpeg
+    python -m src.build_dataset --channels clean gsm volte vonr mic
 """
 import argparse
 import re
+import tempfile
+import zlib
 from pathlib import Path
 
 import soundfile as sf
@@ -21,7 +24,7 @@ import librosa
 import pandas as pd
 from tqdm import tqdm
 
-from src import channel_sim
+from src import channel_sim, mic_sim
 
 RAW_DIR = Path("data/raw/KAGGLE/AUDIO")
 WINDOWS_DIR = Path("data/raw/windows")
@@ -34,10 +37,18 @@ WINDOW_SEC = 1.0
 # Locutores excluídos do estudo (decisão do projeto, não técnica).
 EXCLUDED_SPEAKERS = {"musk", "trump"}
 
+
+def _mic_channel(src: Path, dst: Path) -> None:
+    # seed determinístico por arquivo (reprodutível, mas varia a sala/mic simulados entre janelas)
+    seed = zlib.crc32(str(src).encode()) & 0xFFFFFFFF
+    mic_sim.to_mic(src, dst, seed=seed)
+
+
 CHANNEL_FN = {
     "gsm": channel_sim.to_gsm,
     "volte": channel_sim.to_volte,
     "vonr": channel_sim.to_vonr,
+    "mic": _mic_channel,
 }
 
 
@@ -52,7 +63,14 @@ def parse_speakers(filename: str, label: str) -> str:
     return ",".join(sorted({source, target}))
 
 
+SILENCE_TOP_DB = 30  # mesmo limiar usado em audit_silence.py (fase T)
+
+
 def slice_to_windows(audio_path: Path, out_dir: Path) -> list[Path]:
+    """Corta o áudio em janelas de 1s. Antes de fatiar, remove o silêncio de
+    borda (início/fim) da gravação inteira, e cada janela sai normalizada a
+    -16 LUFS (mesma normalização já aplicada em gsm/volte/vonr) — corrige o
+    atalho de silêncio/volume encontrado na auditoria da fase T."""
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = audio_path.stem
     existing = sorted(out_dir.glob(f"{stem}_*.wav"))
@@ -60,15 +78,19 @@ def slice_to_windows(audio_path: Path, out_dir: Path) -> list[Path]:
         return existing
 
     audio, _ = librosa.load(audio_path, sr=SR, mono=True)
+    audio, _ = librosa.effects.trim(audio, top_db=SILENCE_TOP_DB)
     window_len = int(WINDOW_SEC * SR)
     n_windows = len(audio) // window_len
 
     paths = []
-    for i in range(n_windows):
-        window = audio[i * window_len : (i + 1) * window_len]
-        out_path = out_dir / f"{stem}_{i:05d}.wav"
-        sf.write(out_path, window, SR)
-        paths.append(out_path)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        for i in range(n_windows):
+            window = audio[i * window_len : (i + 1) * window_len]
+            raw_path = Path(tmp_dir) / f"{stem}_{i:05d}.wav"
+            out_path = out_dir / f"{stem}_{i:05d}.wav"
+            sf.write(raw_path, window, SR)
+            channel_sim.normalize_clean(raw_path, out_path)
+            paths.append(out_path)
     return paths
 
 
@@ -111,7 +133,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--channels", nargs="+", default=["clean"],
-        choices=["clean", "gsm", "volte", "vonr"],
+        choices=["clean", "gsm", "volte", "vonr", "mic"],
     )
     args = parser.parse_args()
 
