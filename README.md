@@ -19,14 +19,18 @@ documentada como achado, não escondida. Os detalhes de cada etapa, com os núme
 estão nas tabelas de `results/` e no relatório técnico completo (gerado durante o
 desenvolvimento, fora deste repositório).
 
-O projeto foi validado num segundo dataset bem maior, o **ASVspoof 2019 LA** (~122 mil
-gravações, split oficial treino/validação/teste, com tipos de ataque de síntese nunca
-vistos no teste) — o mesmo padrão de resultado se confirmou lá. Também foi adicionado
-um 5º canal simulando **microfone/ambiente de captação** (não só codec de telecom): ele
-ajuda o classificador pesado (Wav2Vec2) a generalizar melhor para um microfone de
-notebook nunca visto no treino, mas não resolve o caso de um headset sem fio — provável
-sinal de que esse hardware aplica processamento próprio de áudio (redução de ruído,
-ajuste automático de volume) que uma simulação não reproduz.
+O projeto foi validado num segundo dataset bem maior, o **ASVspoof 2019 LA** (107
+locutores, 19 tipos de ataque de síntese, split oficial treino/validação/teste com
+ataques nunca vistos no teste) — o mesmo padrão de resultado se confirmou lá. Também
+foi adicionado um 5º canal simulando **microfone/ambiente de captação** (não só codec
+de telecom): ele ajuda o classificador pesado (Wav2Vec2) a generalizar melhor para
+microfones nunca vistos no treino, mas a simulação sozinha não bastou para um headset
+sem fio — duas tentativas de recalibrar o perfil de microfone não resolveram. O que
+resolveu (parcialmente) não foi mexer na simulação: foi treinar no dataset maior. Com
+os mesmos dois perfis de microfone simulados, o mesmo classificador foi de 0% para 60%
+de acerto no headset só por ter sido treinado no ASVspoof em vez do DEEP-VOICE — indício
+de que escala e diversidade do dataset de treino generalizam melhor para hardware de
+captura novo do que ajustar os parâmetros da simulação isoladamente.
 
 ## As frentes do projeto
 
@@ -312,6 +316,31 @@ locutor) — o mesmo padrão se repete no ASVspoof (`results/figures/asvspoof/`)
 **Espectrogramas comparativos entre canais**
 
 ![Espectrogramas comparativos](results/figures/deepvoice/spectrograms_comparativo.png)
+
+**Comparação entre datasets: o ganho de Data Augmentation no canal mic é maior no ASVspoof**
+
+![Comparação DEEP-VOICE vs ASVspoof no canal mic](results/figures/fig5_dataset_comparativo.png)
+
+**Generalização para microfone novo: dataset maior generaliza melhor (teste ao vivo)**
+
+![Generalização por microfone e dataset](results/figures/fig6_microfone_generalizacao.png)
+
+**Nenhum atributo MFCC isolado separa bem voz real de clonada**
+
+![Distribuição de atributos, real vs. clonada](results/figures/fig7_distribuicao_atributos.png)
+
+### Tabelas
+
+As 4 tabelas usadas no artigo também são geradas como imagem (estilo acadêmico, só
+regras horizontais), por [`src/make_tables.py`](src/make_tables.py):
+
+```bash
+python -m src.make_tables
+```
+
+Saem em `results/figures/tabela1_dataset_comparativo.png` até `tabela4_teste_ao_vivo.png`
+— escala dos dois datasets, EER no canal mic (DEEP-VOICE e ASVspoof) e o resultado do
+teste ao vivo com os dois microfones.
 
 ## Referências
 

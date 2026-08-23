@@ -168,13 +168,139 @@ def fig4_voz_propria_antes_depois() -> None:
     plt.close(fig)
 
 
+def fig5_dataset_comparativo() -> None:
+    """Compara o ganho de Data Augmentation no canal mic entre os dois datasets:
+    DEEP-VOICE (LOSO) vs. ASVspoof (splits dev/eval oficiais)."""
+    dv = pd.read_csv(RESULTS_DIR / "channel_model_table.csv")
+    av = pd.read_csv(RESULTS_DIR / "channel_model_table_asvspoof.csv")
+
+    def eer_mic(df, regime, split=None):
+        sub = df[(df["feature"] == "wav2vec2") & (df["regime"] == regime) & (df["channel"] == "mic")]
+        if split is not None:
+            sub = sub[sub["split"] == split]
+        return sub["eer"].iloc[0]
+
+    groups = ["DEEP-VOICE\n(LOSO)", "ASVspoof\n(dev)", "ASVspoof\n(eval,\nataques novos)"]
+    clean_vals = [eer_mic(dv, "clean"), eer_mic(av, "clean", "dev"), eer_mic(av, "clean", "eval")]
+    aug_vals = [eer_mic(dv, "augmented"), eer_mic(av, "augmented", "dev"), eer_mic(av, "augmented", "eval")]
+
+    x = np.arange(len(groups))
+    width = 0.35
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    ax.bar(x - width / 2, clean_vals, width, label="Treinado só com canal limpo", color="#d62728")
+    ax.bar(x + width / 2, aug_vals, width, label="Treinado com Data Augmentation (incl. canal mic)", color="#2ca02c")
+    for xi, v in zip(x - width / 2, clean_vals):
+        ax.text(xi, v + 0.01, f"{v:.2f}", ha="center", fontsize=9)
+    for xi, v in zip(x + width / 2, aug_vals):
+        ax.text(xi, v + 0.01, f"{v:.2f}", ha="center", fontsize=9)
+    for xi, cv, av_ in zip(x, clean_vals, aug_vals):
+        ax.annotate("", xy=(xi + width / 2, av_ + 0.045), xytext=(xi - width / 2, cv + 0.045),
+                    arrowprops=dict(arrowstyle="->", color="gray"))
+        ax.text(xi, max(cv, av_) + 0.075, f"{(cv - av_) * 100:+.1f}pp", ha="center", fontsize=8.5, color="gray")
+    ax.set_xticks(x)
+    ax.set_xticklabels(groups)
+    ax.set_ylabel("EER no canal mic (Wav2Vec2, quanto menor melhor)")
+    ax.set_ylim(0, max(clean_vals) * 1.35)
+    ax.grid(axis="y", alpha=0.3)
+    ax.legend(loc="upper left", fontsize=8.5)
+    ax.set_title("O ganho de Data Augmentation no canal de captura é maior no dataset maior")
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "fig5_dataset_comparativo.png", dpi=150)
+    plt.close(fig)
+
+
+def fig6_microfone_generalizacao() -> None:
+    """Teste ao vivo: % de janelas corretas por microfone real, comparando o
+    modelo Wav2Vec2 treinado em cada dataset. Dumbbell (não barra) porque um
+    dos pontos é 0% — o mesmo problema de visualização que fig3/fig4 já
+    tratam. MFCC fica de fora por ser 0% nas 4 condições (citado em texto)."""
+    mics = ["Microfone do notebook", "Headset close-talk"]
+    deepvoice_pct = [80, 0]
+    asvspoof_pct = [80, 60]
+
+    # Não usa _dumbbell aqui porque a linha "notebook" tem os dois valores
+    # IGUAIS (80/80) — dois marcadores cheios na mesma posição esconderiam um
+    # atrás do outro. Anel + ponto cheio deixa os dois visíveis mesmo quando
+    # coincidem.
+    y = np.arange(len(mics))
+    fig, ax = plt.subplots(figsize=(8.5, 3.8))
+    for yi, l, r in zip(y, deepvoice_pct, asvspoof_pct):
+        ax.plot([l, r], [yi, yi], color="lightgray", zorder=1, linewidth=2.5)
+    ax.scatter(deepvoice_pct, y, s=340, facecolors="none", edgecolors="#dd8452", linewidths=3,
+               zorder=3, label="Treinado no DEEP-VOICE (6 locutores)")
+    ax.scatter(asvspoof_pct, y, color="#4c72b0", s=120, zorder=2, label="Treinado no ASVspoof (107 locutores)")
+    for yi, l, r in zip(y, deepvoice_pct, asvspoof_pct):
+        ax.text(l, yi + 0.28, f"{l:.0f}%", ha="center", fontsize=9.5, color="#dd8452", fontweight="bold")
+        ax.text(r, yi - 0.32, f"{r:.0f}%", ha="center", fontsize=9.5, color="#4c72b0", fontweight="bold")
+    ax.set_yticks(y)
+    ax.set_yticklabels(mics)
+    ax.set_ylim(-0.6, len(mics) - 0.4)
+    ax.invert_yaxis()
+    ax.set_xlabel("% das janelas de voz real classificadas corretamente\n(Wav2Vec2, teste ao vivo, 15 janelas por condição)")
+    ax.set_xlim(-5, 100)
+    ax.axvline(50, color="gray", linestyle=":", linewidth=1, label="Acaso (50%)")
+    ax.grid(axis="x", alpha=0.3)
+    ax.set_title("Generalização para hardware de captura novo: dataset maior generaliza melhor", fontsize=11)
+    handles, legend_labels = ax.get_legend_handles_labels()
+    fig.legend(handles, legend_labels, fontsize=8.5, loc="lower center", bbox_to_anchor=(0.5, -0.1), ncol=1, frameon=False)
+    fig.tight_layout(rect=[0, 0.16, 1, 1])
+    fig.savefig(FIG_DIR / "fig6_microfone_generalizacao.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def fig7_distribuicao_atributos() -> None:
+    """Boxplot com jitter (estilo usado nos artigos de referência) mostrando
+    que atributos MFCC individuais NÃO separam bem voz real de clonada — a
+    diferença é estatisticamente significativa (Mann-Whitney U, p<0,001,
+    por causa do n grande), mas as distribuições se sobrepõem muito. É a
+    evidência visual de por que a Seção 3.2 combina 26 atributos com um
+    classificador em vez de usar um único limiar."""
+    rng = np.random.default_rng(42)
+    df = pd.read_csv("data/features_mfcc.csv")
+    df_clean = df[df["channel"] == "clean"]
+
+    specs = [("rms", "RMS"), ("spectral_centroid", "Centroide espectral [Hz]")]
+    fig, axes = plt.subplots(1, 2, figsize=(9, 4.3))
+    for ax, (col, label) in zip(axes, specs):
+        real = df_clean[df_clean["label"] == "real"][col].values
+        fake = df_clean[df_clean["label"] == "fake"][col].values
+        bp = ax.boxplot([real, fake], tick_labels=["Real", "Clonada"], widths=0.5,
+                         showfliers=False, patch_artist=True)
+        for patch, color in zip(bp["boxes"], ["#c9d9ea", "#e8c9c9"]):
+            patch.set_facecolor(color)
+            patch.set_edgecolor("#434343")
+        for element in ("whiskers", "caps", "medians"):
+            for line in bp[element]:
+                line.set_color("#434343")
+
+        # jitter de uma amostra (não os ~15 mil pontos, senão vira uma mancha ilegível)
+        for i, vals in enumerate([real, fake], start=1):
+            sample = rng.choice(vals, size=min(35, len(vals)), replace=False)
+            x = rng.normal(i, 0.06, size=len(sample))
+            ax.scatter(x, sample, s=10, color="#555", alpha=0.6, zorder=3)
+
+        ax.set_ylabel(label)
+        ax.grid(axis="y", alpha=0.3)
+    fig.suptitle("Atributos isolados se sobrepõem entre real e clonada (canal limpo)", fontsize=11)
+    fig.text(0.5, -0.02,
+              "Pontos: amostra de 35 observações por classe. Diferença estatisticamente significativa\n"
+              "(Mann-Whitney U, p<0,001 nos dois atributos) mas de pequena magnitude — nenhum dos dois separa as classes sozinho.",
+              ha="center", fontsize=8, style="italic", color="#555")
+    fig.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.savefig(FIG_DIR / "fig7_distribuicao_atributos.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main() -> None:
     FIG_DIR.mkdir(parents=True, exist_ok=True)
     fig1_eer_canal_regime()
     fig2_latencia()
     fig3_conhecido_vs_desconhecido()
     fig4_voz_propria_antes_depois()
-    print(f"4 gráficos salvos em {FIG_DIR}/")
+    fig5_dataset_comparativo()
+    fig6_microfone_generalizacao()
+    fig7_distribuicao_atributos()
+    print(f"7 gráficos salvos em {FIG_DIR}/")
 
 
 if __name__ == "__main__":

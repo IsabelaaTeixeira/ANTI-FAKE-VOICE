@@ -94,8 +94,18 @@ def run_wav2vec2(
     done = 0
     embeddings: list[np.ndarray] = []
     if w2v_array_out.exists() and w2v_meta_out.exists():
-        embeddings = list(np.load(w2v_array_out)["X"])
-        done = len(embeddings)
+        existing_meta = pd.read_csv(w2v_meta_out)
+        existing_embeddings = list(np.load(w2v_array_out)["X"])
+        n = min(len(existing_meta), len(existing_embeddings), len(paths))
+        # só reaproveita se o prefixo bater com o manifest atual (mesmo filepath, na mesma
+        # ordem) — evita retomar com embeddings de um manifest antigo/diferente (mesma
+        # contagem de linhas não implica mesmo conteúdo, ver fase BB/DD)
+        matches = n > 0 and (existing_meta["filepath"].values[:n] == np.array(paths[:n])).all()
+        if matches:
+            embeddings = existing_embeddings[:n]
+            done = n
+        else:
+            print("Aviso: embeddings existentes não batem com o manifest atual — recalculando do zero.")
 
     since_last_save = 0
     for i in tqdm(range(done, len(paths), batch_size), desc="Wav2Vec2", initial=done // batch_size):
