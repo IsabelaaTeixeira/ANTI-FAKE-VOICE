@@ -26,6 +26,7 @@ data/calib_*.wav
 models/*.pkl
 models/*.pt
 models/*.joblib
+models/*.npz
 
 # tabelas de predição janela-a-janela (grandes, regeneráveis); as tabelas-resumo ficam versionadas
 results/cv_predictions.csv
@@ -40,3 +41,7 @@ artigos_v1/
 
 # rascunho do artigo próprio: ainda não publicado
 artigo/
+
+# atributos de sequência do treino completo e predições (grandes, regeneráveis)
+data/features_seq_*/
+data/predictions_full/

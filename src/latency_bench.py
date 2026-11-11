@@ -15,7 +15,10 @@ Arquiteturas:
   - o mesmo, quantizado em int8 (pesos das camadas lineares guardados como
     inteiros de 8 bits, mais rápidos em CPU). A quantização muda levemente
     os números, então também se mede o EER antes/depois no split dev do
-    ASVspoof (todas as janelas do canal limpo) — results/latency_quality.csv.
+    ASVspoof (todas as janelas do canal limpo) — results/latency_quality.csv;
+  - Wav2Vec2 cortado na camada W2V_LAYER (float32 e int8) + classificador de
+    sequência (src/sequence_classifier.py): projeção PCA dos 49 vetores e a
+    rede pequena; o tempo só dessa parte final também é registrado.
 
 Dois orçamentos de tempo:
   - 1000ms (duração da janela): o detector roda em PARALELO à ligação, numa
@@ -25,7 +28,8 @@ Dois orçamentos de tempo:
     ficasse NO CAMINHO da voz (a ligação esperando o veredito de cada janela).
 
 Uso:
-    python -m src.latency_bench
+    python -m src.latency_bench             # todas as arquiteturas
+    python -m src.latency_bench --only-seq  # só o classificador de sequência (atualiza as linhas dele)
 """
 import time
 from pathlib import Path
@@ -98,25 +102,82 @@ def bench_wav2vec2(audios: list[np.ndarray], layer: int, int8: bool) -> np.ndarr
     return np.array(times)
 
 
+def bench_seqnet(audios: list[np.ndarray], int8: bool) -> tuple[np.ndarray, np.ndarray]:
+    """Tempo total por janela e só da parte final (PCA + rede), com o modelo do regime augmentado.
+
+    A projeção PCA é uma multiplicação de matrizes no numpy, cuja biblioteca
+    (OpenBLAS) abre as próprias threads, uma por núcleo lógico. Intercaladas com
+    as do PyTorch, as duas disputam a CPU e o tempo por janela quase triplica
+    (as threads de uma ficam ocupadas esperando enquanto a outra trabalha). Numa
+    implantação, a projeção (49x768 por 768x128) roda numa thread só, como aqui."""
+    from threadpoolctl import threadpool_limits
+
+    from src.sequence_classifier import load_seqnet, predict_seqnet
+    from src.sequence_features import layer_frames, load_pca, project
+
+    net, pca = load_seqnet("augmented"), load_pca()
+    processor, model = wav2vec2_variant(W2V_LAYER, int8)
+    total, head = [], []
+    with threadpool_limits(1, user_api="blas"):
+        frames = layer_frames(audios[:3], processor, model)  # aquecimento
+        predict_seqnet(net, project(frames, pca), frames.mean(axis=1))
+        for y in audios:
+            t0 = time.perf_counter()
+            frames = layer_frames([y], processor, model)
+            t1 = time.perf_counter()
+            predict_seqnet(net, project(frames, pca), frames.mean(axis=1))
+            t2 = time.perf_counter()
+            total.append((t2 - t0) * 1000)
+            head.append((t2 - t1) * 1000)
+    return np.array(total), np.array(head)
+
+
+def seq_rows(audios: list[np.ndarray]) -> list[dict]:
+    rows = []
+    for int8 in (False, True):
+        name = f"Wav2Vec2 cortado na camada {W2V_LAYER}{', int8' if int8 else ''} + classificador de sequência"
+        print(f"Benchmark {name} ({len(audios)} janelas)...")
+        total, head = bench_seqnet(audios, int8)
+        rows.append(summarize(name, total))
+        rows.append(summarize(f"  (só PCA + rede de sequência, {'int8' if int8 else 'float32'})", head))
+    return rows
+
+
 def int8_quality(layer: int) -> pd.DataFrame:
     """EER no canal limpo do dev do ASVspoof com o mesmo classificador (o do
-    regime augmented, treinado nos atributos float32 do split de treino),
-    extraindo os atributos de teste com a rede float32 e com a rede int8."""
+    regime augmented, treinado nos atributos float32), extraindo os atributos
+    de teste com a rede float32 e com a rede int8. Média + RL treinada na
+    amostra de treino; o classificador de sequência (só na camada W2V_LAYER,
+    a da sua PCA), no split de treino completo."""
     df, X = load_wav2vec2("asvspoof", layer)
     train = regime_mask("augmented", df["channel"].values, (df["split"] == "train").values)
     clf = make_classifier("wav2vec2").fit(X[train], label_vector(df)[train])
     test = df[(df["split"] == "dev") & (df["channel"] == "clean")]
     audios = [librosa.load(p, sr=SR, mono=True)[0] for p in test["filepath"]]
     y = label_vector(test)
+    seq = layer == W2V_LAYER
+    if seq:
+        from src.sequence_classifier import load_seqnet, predict_seqnet
+        from src.sequence_features import layer_frames, load_pca, project
+        net, pca = load_seqnet("augmented"), load_pca()
 
     rows = []
     for int8 in (False, True):
         processor, model = wav2vec2_variant(layer, int8)
-        emb = np.concatenate([embed(audios[i:i + 16], processor, model) for i in range(0, len(audios), 16)])
-        rows.append({
-            "camada": layer, "precisao": "int8" if int8 else "float32", "n": len(test),
-            "eer_dev_clean": eer(y, clf.predict_proba(emb)[:, 1]),
-        })
+        emb, seq_scores = [], []
+        for i in range(0, len(audios), 16):
+            if seq:
+                frames = layer_frames(audios[i:i + 16], processor, model)
+                emb.append(frames.mean(axis=1))
+                seq_scores.append(predict_seqnet(net, project(frames, pca), frames.mean(axis=1)))
+            else:
+                emb.append(embed(audios[i:i + 16], processor, model))
+        precision = "int8" if int8 else "float32"
+        rows.append({"camada": layer, "classificador": "Média + RL", "precisao": precision, "n": len(test),
+                     "eer_dev_clean": eer(y, clf.predict_proba(np.concatenate(emb))[:, 1])})
+        if seq:
+            rows.append({"camada": layer, "classificador": "Sequência", "precisao": precision, "n": len(test),
+                         "eer_dev_clean": eer(y, np.concatenate(seq_scores))})
     return pd.DataFrame(rows)
 
 
@@ -139,6 +200,7 @@ def main() -> None:
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--only-quality", action="store_true", help="só refaz a comparação de qualidade float32 x int8")
+    parser.add_argument("--only-seq", action="store_true", help="só mede o classificador de sequência e atualiza as linhas dele")
     args = parser.parse_args()
     torch.set_num_threads(TORCH_THREADS)
     if args.only_quality:
@@ -148,6 +210,14 @@ def main() -> None:
     clean_paths = manifest.loc[manifest["channel"] == "clean", "filepath"]
     sample = clean_paths.iloc[_subsample(len(clean_paths), max(N_BENCH_MFCC, N_BENCH_W2V))].tolist()
     audios = [librosa.load(p, sr=SR, mono=True)[0] for p in sample]
+    if args.only_seq:
+        new = pd.DataFrame(seq_rows(audios[:N_BENCH_W2V]))
+        old = pd.read_csv(LATENCY_OUT)
+        table = pd.concat([old[~old["arquitetura"].isin(new["arquitetura"])], new], ignore_index=True)
+        table.to_csv(LATENCY_OUT, index=False)
+        print("\n" + new.to_string(index=False))
+        print(f"\nLinhas atualizadas em {LATENCY_OUT}")
+        return
 
     rows = []
     print(f"Benchmark MFCC ({N_BENCH_MFCC} janelas)...")
@@ -160,6 +230,7 @@ def main() -> None:
     for name, layer, int8 in variants:
         print(f"Benchmark {name} ({N_BENCH_W2V} janelas)...")
         rows.append(summarize(name, bench_wav2vec2(audios[:N_BENCH_W2V], layer, int8)))
+    rows += seq_rows(audios[:N_BENCH_W2V])
 
     table = pd.DataFrame(rows)
     LATENCY_OUT.parent.mkdir(parents=True, exist_ok=True)

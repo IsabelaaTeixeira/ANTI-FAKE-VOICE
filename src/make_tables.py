@@ -242,14 +242,22 @@ def tabela6_portugues() -> None:
 
 def tabela7_latencia() -> None:
     lat = _read("latency.csv")
-    quality = _read("latency_quality.csv").set_index("precisao")["eer_dev_clean"]
+    quality = _read("latency_quality.csv")
+    if "classificador" not in quality.columns:
+        quality["classificador"] = "Média + RL"
+    eer_by_precision = {
+        name: g.set_index("precisao")["eer_dev_clean"] for name, g in quality.groupby("classificador", sort=False)
+    }
+    quality_text = "; ".join(
+        f"{name}: float32 {_num(q.get('float32'))}, int8 {_num(q.get('int8'))}" for name, q in eer_by_precision.items()
+    )
     rows = [
         [r["arquitetura"], _num(r["mediana_ms"], 0), _num(r["p95_ms"], 0), _num(r["fator_tempo_real_p95"], 2),
          "sim" if r["cabe_em_paralelo_1s"] else "não", "sim" if r["cabe_no_caminho_da_voz_150ms"] else "não"]
         for _, r in lat.iterrows()
     ]
     _table_image(
-        7, f"Latência por janela de 1s (CPU de notebook). EER no dev do ASVspoof, canal limpo: float32 {_num(quality.get('float32'))}, int8 {_num(quality.get('int8'))}.",
+        7, f"Latência por janela de 1s (CPU de notebook). EER no dev do ASVspoof, canal limpo — {quality_text}.",
         ["Arquitetura", "Mediana (ms)", "p95 (ms)", "Fator tempo real", "Em paralelo (<1s)", "No caminho da voz (<150ms)"],
         rows, "tabela7_latencia.png",
         col_widths=[0.34, 0.1, 0.09, 0.12, 0.15, 0.2], width_in=14,

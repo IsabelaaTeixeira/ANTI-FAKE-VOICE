@@ -1,3 +1,5 @@
-camada,precisao,n,eer_dev_clean
-4,float32,2894,0.06252696289905091
-4,int8,2894,0.06771956787460454
+camada,classificador,precisao,n,eer_dev_clean
+4,Média + RL,float32,2894,0.06252696289905091
+4,Sequência,float32,2894,0.017092980059438212
+4,Média + RL,int8,2894,0.06771956787460454
+4,Sequência,int8,2894,0.01903955157703001

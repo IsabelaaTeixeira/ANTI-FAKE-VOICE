@@ -41,23 +41,44 @@ O projeto cresceu em etapas, e cada uma partiu do que a anterior deixou em abert
    - outro idioma, com sintetizadores atuais (português);
    - a decisão sobre a ligação inteira, e não só sobre cada segundo;
    - uma versão do Wav2Vec2 cortada e quantizada para caber no orçamento de latência.
+5. **Mais dados de treino e um classificador mais forte.** O treino passou a usar o
+   split de treino completo do ASVspoof 2019 (25.380 gravações, ~10 vezes a amostra
+   usada até então), e entrou um segundo classificador, que lê a sequência de vetores
+   do Wav2Vec2 (um a cada 20 ms) em vez da média deles. Com as mesmas gravações, um
+   controle passou a medir quanto codificar cada segundo isoladamente, como nas
+   primeiras etapas, distorce o efeito estimado de cada canal.
 
 ## Principais resultados
 
 - **O canal mais difícil para o classificador é o GSM**, de banda estreita — o
-  contrário do que acontece com humanos, que acertam mais no GSM. Enquanto cada
-  segundo era codificado isoladamente, o VoNR (5G) parecia o pior caso; com o codec
-  aplicado à ligação inteira, esse padrão desaparece.
+  contrário do que acontece com humanos, que acertam mais no GSM. Com o MFCC,
+  enquanto cada segundo era codificado isoladamente, o VoNR (5G) parecia o pior caso;
+  com o codec aplicado à ligação inteira, esse padrão desaparece.
+- **O jeito de simular o codec pesa mais para classificadores mais ricos.** Num
+  controle direto (mesmas gravações e modelos), codificar cada segundo isoladamente
+  não muda o classificador de média do Wav2Vec2, mas aumenta em 2,6 pontos o erro do
+  classificador de sequência no GSM e no VoNR — quase dobra o efeito estimado do VoNR.
 - **Data Augmentation funciona, mas é uma troca.** No ASVspoof 2019, treinar com os
   canais simulados melhora todos os canais degradados (GSM: EER 0,288 → 0,241) e
   piora o áudio limpo (0,162 → 0,193). Com o mesmo número de janelas, o ganho nos
-  codecs se mantém: **o que ajuda é ver canais diferentes, não ter mais dados**.
+  codecs se mantém: para o classificador de média, **o que ajuda é ver canais
+  diferentes, não ter mais dados**. Para o classificador de sequência, o volume
+  também conta.
+- **Ler a sequência ajuda mais que ter mais dados.** Com o split de treino completo
+  do ASVspoof 2019 (10 vezes mais gravações), o classificador de média melhora pouco
+  (EER no eval 0,162 → 0,149); o classificador que lê a sequência de vetores do
+  Wav2Vec2 chega a 0,116 por janela e 0,097 por gravação, perto dos detectores de
+  referência de 2019.
 - **O ganho vale em telefonia real.** No ASVspoof 2021 LA, com gravações
   transmitidas de verdade por 7 sistemas de telefonia, o treino com codecs simulados
   reduz o erro de 23,2% para 20,5%, com ganhos maiores no GSM (34,0% → 23,6%) e na
   rede fixa (PSTN, 31,2% → 25,0%). Ele melhora até codecs que nunca foram simulados.
-  Os detectores oficiais do desafio continuam melhores (~9%): foram treinados com 10
-  vezes mais dados e com redes ajustadas de ponta a ponta.
+  Com o treino completo e o classificador de sequência, o erro cai de 17,8% para
+  16,3% (PSTN: 22,4% → 17,0%), e o treino com canais também mantém o limiar de
+  decisão: sem ele, o limiar escolhido no laboratório marca como clonadas 29% das
+  gravações reais no GSM; com ele, 8%. Os detectores oficiais do desafio continuam
+  melhores (~9%), e quase toda a diferença já aparece sem codec — vem dos ataques
+  novos, não do canal.
 - **O canal não é o maior problema.** Depois do treino com canais, o efeito do canal
   fica em no máximo ~8 pontos percentuais de EER. Um **locutor nunca visto** custa
   ~15 pontos, e um **tipo de ataque nunca visto** triplica o erro (0,063 → 0,193). Em
@@ -70,7 +91,7 @@ O projeto cresceu em etapas, e cada uma partiu do que a anterior deixou em abert
 - **A latência cabe no orçamento.** O Wav2Vec2 cortado na camada 4 e quantizado em 8
   bits decide em 49 ms (p95) por janela de 1 s em CPU de notebook, abaixo dos 150 ms
   de uma conversa (ITU-T G.114). A quantização custa pouco: o EER passa de 0,063 para
-  0,068.
+  0,068. O classificador de sequência acrescenta só ~1 ms por janela.
 - **O MFCC não generaliza.** Ele fica no nível do chute diante de ataques novos e, em
   português, chama de falsas ~99% das janelas, reais ou clonadas.
 
@@ -290,7 +311,34 @@ cada uma ser clonada. Use `--int8` para o Wav2Vec2 quantizado, ou `--model` para
 modelo específico (por exemplo, `models/wav2vec2_with_own_voice.joblib`). **Rode-o no
 seu próprio terminal**, porque ele espera sua fala em tempo real.
 
-### 8. Gráficos e tabelas
+### 8. Treino completo e classificador de sequência
+
+```bash
+python -m src.build_dataset_asvspoof_full fit-pca   # PCA dos vetores por quadro (768 -> 128), com janelas da amostra
+python -m src.build_dataset_asvspoof_full build     # treino completo, 5 canais (retoma se interrompido)
+python -m src.build_dataset_asvspoof_full dev       # dev, para escolher a época da rede
+python -m src.build_dataset_asvspoof_full check     # confere contra os atributos da amostra
+python -m src.sequence_classifier                   # média + RL e classificador de sequência, 3 regimes
+python -m src.full_predict --source asvspoof        # dev e eval do 2019, 6 canais
+python -m src.full_predict --source perwindow       # controle: codec em cada janela de 1 s isolada
+python -m src.full_predict --source pt              # português (precisa das janelas do passo 6)
+python -m src.full_predict --source asvspoof2021    # telefonia real, lida direto do pacote
+python -m src.full_tables                           # tabelas results/full_*.csv
+python -m src.paper_figures                         # figuras do artigo de congresso
+```
+
+Para não ocupar ~7 GB com janelas em disco, cada gravação do treino completo é
+preparada em memória (mesmo corte de silêncio, mesmo codec na gravação inteira,
+mesma normalização) e só os atributos vão para o disco: a média dos vetores da
+camada 4 e a sequência deles projetada em 128 dimensões. O `check` confirma que o
+resultado é idêntico ao do pipeline em disco. Os testes também passam pela rede numa
+passada só, guardando só as predições de cada modelo.
+
+O classificador de sequência é uma rede pequena (~230 mil parâmetros) que roda em
+CPU: duas convoluções no tempo, um *pooling* de estatísticas com atenção e a média
+completa dos 768 valores. A época final é a de menor EER no dev.
+
+### 9. Gráficos e tabelas
 
 ```bash
 python -m src.make_diagram   # desenho do experimento
@@ -317,6 +365,11 @@ python -m src.make_tables    # tabelas 1–8, como imagem
 | `call_level_pt.csv` | Decisão por ligação no conjunto em português |
 | `own_voice_pretrain_table*.csv`, `own_voice_ceiling_table.csv` | Voz própria, antes e depois do retreino |
 | `silence_audit_*.csv` | Auditoria de silêncio de borda (real vs. clonada) |
+| `full_train_log.csv` | Treino completo: EER no dev de cada época, por classificador e regime |
+| `full_asvspoof2019.csv` | Treino completo: ASVspoof 2019 dev e eval por canal, para a amostra e o split completo, média + RL e sequência |
+| `full_perwindow.csv` | Codec na gravação inteira vs. em cada janela isolada, mesmos modelos e gravações |
+| `full_perwindow_paired.csv` | A diferença de EER entre os dois modos de simular, janela a janela, com intervalo pareado |
+| `full_asvspoof2021.csv`, `full_pt.csv` | Treino completo: testes externos por condição e por sintetizador, com alarme falso e detecção no limiar do dev |
 
 As predições janela a janela (`cv_predictions*.csv`) não são versionadas por serem
 grandes; o passo 4 as regenera.
