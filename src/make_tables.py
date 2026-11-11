@@ -1,8 +1,9 @@
 """Gera as tabelas do artigo como imagens (não markdown), no estilo
 acadêmico "booktabs" (só regras horizontais, sem cor, sem linhas verticais)
-usado nos artigos de referência deste trabalho. Os números vêm de
-results/*.csv (conferidos manualmente ao montar cada tabela) — este script
-não recalcula nada, só formata.
+usado nos artigos de referência deste trabalho. Os números são lidos de
+results/*.csv (e as contagens de janelas, dos manifests em data/) — nada é
+digitado à mão, exceto a tabela do teste ao vivo, que não tem CSV. Uma
+tabela cujos dados ainda não existem é pulada com aviso.
 
 Uso:
     python -m src.make_tables
@@ -12,8 +13,12 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import pandas as pd
+
+from src.features import W2V_LAYER
 
 FIG_DIR = Path("results/figures")
+RESULTS_DIR = Path("results")
 plt.rcParams["font.family"] = "serif"
 
 RULE_COLOR = "black"
@@ -75,74 +80,215 @@ def _table_image(
     print(f"Salvo {FIG_DIR / out_name}")
 
 
-def tabela1_dataset_comparativo() -> None:
+CHANNEL_ORDER = ["clean", "gsm", "volte", "vonr", "vonr_loss", "mic"]
+CHANNEL_LABELS = {
+    "clean": "Limpo", "gsm": "GSM", "volte": "VoLTE", "vonr": "VoNR (EVS)",
+    "vonr_loss": "VoNR + perda de pacotes*", "mic": "Mic/ambiente",
+}
+REAL_CHANNEL_ORDER = ["none", "alaw", "ulaw", "g722", "gsm", "opus", "pstn", "todas"]
+REAL_CHANNEL_LABELS = {
+    "none": "Sem codec", "alaw": "a-law (VoIP)", "ulaw": "µ-law (VoIP)", "g722": "G.722 (VoIP)",
+    "gsm": "GSM", "opus": "Opus (VoIP)", "pstn": "PSTN (rede fixa)", "todas": "Todas juntas",
+}
+REGIME_SHORT = {"clean": "limpo", "augmented": "augmentado", "augmented_matched": "pareado"}
+W2V = f"Wav2Vec2 (camada {W2V_LAYER})"
+
+
+def _num(v: float, digits: int = 3) -> str:
+    return "—" if pd.isna(v) else f"{v:.{digits}f}".replace(".", ",")
+
+
+def _pct(v: float) -> str:
+    return "—" if pd.isna(v) else f"{v:.0%}"
+
+
+def _eer_ci(row: pd.Series) -> str:
+    return f"{_num(row['eer'])} [{_num(row['eer_ci_low'], 2)}–{_num(row['eer_ci_high'], 2)}]"
+
+
+def _read(name: str) -> pd.DataFrame:
+    return pd.read_csv(RESULTS_DIR / name)
+
+
+def _count_windows(manifest: str, **filters) -> pd.DataFrame:
+    df = pd.read_csv(manifest, usecols=lambda c: c in {"channel", "label", "speakers", "source_file", "split", "attack_id", "generator"})
+    for col, val in filters.items():
+        df = df[df[col] == val]
+    return df
+
+
+def tabela1_datasets() -> None:
+    dv = _count_windows("data/manifest.csv", channel="clean")
+    asv = _count_windows("data/manifest_asvspoof.csv", channel="clean")
+    a21 = pd.read_csv("data/features_wav2vec2_meta_asvspoof2021.csv", usecols=["speakers", "source_file", "channel", "label"])
+    # gravações do eval de 2021 no total (as com menos de 1s de fala não geram janela)
+    a21_total = (pd.read_csv("data/raw/ASVSPOOF2021/keys/LA/CM/trial_metadata.txt", sep=" ", header=None, usecols=[7])[7] == "eval").sum()
+    pt = _count_windows("data/manifest_pt.csv", channel="clean")
+
+    def windows(df):
+        return f"{len(df):,} ({(df['label'] == 'real').sum():,} reais)".replace(",", ".")
+
     _table_image(
-        1, "DEEP-VOICE vs. ASVspoof 2019 LA, escala e diversidade.",
-        ["", "DEEP-VOICE", "ASVspoof 2019 LA (amostrado)"],
+        1, "Conjuntos de dados usados (janelas de 1s; nos simulados, por canal).",
+        ["", "DEEP-VOICE", "ASVspoof 2019 LA", "ASVspoof 2021 LA", "Português (MLS)"],
         [
-            ["Locutores", "6", "107"],
-            ["Tipos de ataque/conversão", "1 (RVC)", "19 (A01–A19: TTS e VC diversos)"],
-            ["Split", "LOSO manual (6 dobras)", "Oficial: treino/dev (A01–A06) / eval (A07–A19, nunca vistos)"],
-            ["Janelas limpas (após corte de silêncio)", "15.234", "35.374"],
-            ["Janelas totais (5 canais)", "76.170", "176.870"],
-            ["Corpus original (antes da amostragem)", "~15,3 mil gravações (uso integral)", "~121,5 mil gravações (amostrado, teto 20/grupo)"],
+            ["Papel", "treino e teste (LOSO)", "treino / dev / eval", "só teste", "só teste"],
+            ["Locutores", str(dv["speakers"].str.split(",").explode().nunique()), str(asv["speakers"].nunique()),
+             str(a21["speakers"].nunique()), str(pt["speakers"].nunique())],
+            ["Gravações", f"{dv['source_file'].nunique():,}".replace(",", "."), f"{asv['source_file'].nunique():,}".replace(",", "."),
+             f"{a21['source_file'].nunique():,} de {a21_total:,}".replace(",", "."), f"{pt['source_file'].nunique():,}".replace(",", ".")],
+            ["Ataques", "1 (conversão RVC)", "19 (A01–A19)", "13 (A07–A19)", "2 (XTTS v2, YourTTS)"],
+            ["Canais", "6 simulados", "6 simulados", "7 reais (transmitidos)", "6 simulados"],
+            ["Janelas", windows(dv), windows(asv), windows(a21), windows(pt)],
         ],
         "tabela1_dataset_comparativo.png",
-        col_widths=[0.28, 0.24, 0.48],
-        width_in=11,
+        col_widths=[0.13, 0.2, 0.21, 0.23, 0.23], width_in=13,
     )
 
 
-def tabela2_eer_mic_deepvoice() -> None:
+def tabela2_eer_principal() -> None:
+    dv = _read("channel_model_table.csv")
+    asv = _read("channel_model_table_asvspoof.csv")
+    asv = asv[asv["split"] == "eval"]
+    rows = []
+    for ch in CHANNEL_ORDER:
+        row = [CHANNEL_LABELS[ch]]
+        for df in (dv, asv):
+            for regime in REGIME_SHORT:
+                match = df[(df["feature"] == "wav2vec2") & (df["regime"] == regime) & (df["channel"] == ch)]
+                row.append(_eer_ci(match.iloc[0]) if len(match) else "—")
+        rows.append(row)
     _table_image(
-        2, "EER no canal mic, DEEP-VOICE.",
-        ["Atributo", "Regime", "EER", "Δ com Data Augmentation"],
-        [
-            ["MFCC", "limpo", "0,380", "—"],
-            ["MFCC", "augmentado", "0,388", "+0,8pp (piora)"],
-            ["Wav2Vec2", "limpo", "0,314", "—"],
-            ["Wav2Vec2", "augmentado", "0,302", "-1,2pp (melhora)"],
-        ],
-        "tabela2_eer_mic_deepvoice.png",
-        col_widths=[0.22, 0.22, 0.16, 0.32],
-        width_in=8.5,
+        2, f"EER [intervalo de 95%] por canal e regime de treino, {W2V}. *Canal nunca usado no treino.",
+        ["Canal"] + [f"DEEP-VOICE · {r}" for r in REGIME_SHORT.values()] + [f"ASVspoof eval · {r}" for r in REGIME_SHORT.values()],
+        rows, "tabela2_eer_principal.png",
+        col_widths=[0.16] + [0.14] * 6, width_in=15,
     )
 
 
-def tabela3_eer_asvspoof_canais() -> None:
+def tabela3_asvspoof_detalhe() -> None:
+    df = _read("channel_model_table_asvspoof.csv")
+    df = df[(df["split"] == "eval") & (df["feature"] == "wav2vec2")]
+    rows = []
+    for ch in CHANNEL_ORDER:
+        row = [CHANNEL_LABELS[ch]]
+        for regime in ("clean", "augmented"):
+            r = df[(df["regime"] == regime) & (df["channel"] == ch)].iloc[0]
+            row += [_num(r["eer"]), _num(r["min_tdcf"]), _pct(r["balanced_accuracy_dev_threshold"])]
+        rows.append(row)
     _table_image(
-        3, "EER por canal, Wav2Vec2, ASVspoof (regime augmentado).",
-        ["Split", "Limpo", "GSM", "VoLTE", "VoNR", "Mic"],
-        [
-            ["dev (ataques conhecidos)", "0,106", "0,156", "0,121", "0,133", "0,214"],
-            ["eval (ataques novos)", "0,210", "0,254", "0,233", "0,239", "0,311"],
-        ],
-        "tabela3_eer_asvspoof_canais.png",
-        col_widths=[0.28, 0.14, 0.14, 0.14, 0.14, 0.14],
-        width_in=9.5,
+        3, f"ASVspoof 2019 eval, {W2V}: EER por janela, min t-DCF (por gravação) e acurácia balanceada no limiar do dev.",
+        ["Canal", "EER · limpo", "t-DCF · limpo", "Ac. bal. · limpo", "EER · augm.", "t-DCF · augm.", "Ac. bal. · augm."],
+        rows, "tabela3_eer_asvspoof_canais.png",
+        col_widths=[0.22] + [0.13] * 6, width_in=12.5,
     )
 
 
 def tabela4_teste_ao_vivo() -> None:
     _table_image(
-        4, "% de janelas de voz real classificadas corretamente, teste ao vivo (15 janelas/condição).",
+        4, "% de janelas de voz real classificadas corretamente, teste ao vivo (15 janelas/condição) — etapa intermediária do projeto.",
         ["Microfone", "Wav2Vec2 / DEEP-VOICE", "Wav2Vec2 / ASVspoof", "MFCC (ambos os datasets)"],
         [
             ["Notebook (embutido)", "80%", "80%", "0%"],
             ["Headset (close-talk)", "0%", "60%", "0%"],
         ],
         "tabela4_teste_ao_vivo.png",
-        width_in=10,
+        width_in=11,
     )
+
+
+def tabela5_asvspoof2021() -> None:
+    df = _read("external_eval_table.csv")
+    df = df[(df["test_dataset"] == "asvspoof2021") & (df["train_dataset"] == "asvspoof") & (df["generator"] == "todos")]
+    base = _read("asvspoof2021_baselines.csv")
+    rows = []
+    for ch in REAL_CHANNEL_ORDER:
+        row = [REAL_CHANNEL_LABELS[ch]]
+        for feature in ("mfcc", "wav2vec2"):
+            for regime in ("clean", "augmented"):
+                r = df[(df["feature"] == feature) & (df["regime"] == regime) & (df["channel"] == ch)]
+                row.append(_num(r["eer_utterance"].iloc[0]) if len(r) else "—")
+        for name in ("LFCC-LCNN", "RawNet2"):
+            b = base[(base["baseline"] == name) & (base["channel"] == ch)]
+            row.append(_num(b["eer_utterance_with_windows"].iloc[0]) if len(b) else "—")
+        rows.append(row)
+    _table_image(
+        5, f"ASVspoof 2021 LA (telefonia real): EER por gravação. Treino no ASVspoof 2019, sem retreino; "
+           f"Wav2Vec2 na camada {W2V_LAYER}; baselines oficiais nas mesmas gravações.",
+        ["Condição", "MFCC · limpo", "MFCC · augm.", "Wav2Vec2 · limpo", "Wav2Vec2 · augm.", "LFCC-LCNN (oficial)", "RawNet2 (oficial)"],
+        rows, "tabela5_asvspoof2021.png",
+        col_widths=[0.16, 0.12, 0.12, 0.16, 0.16, 0.14, 0.14], width_in=14,
+    )
+
+
+def tabela6_portugues() -> None:
+    df = _read("external_eval_table.csv")
+    df = df[(df["test_dataset"] == "pt") & (df["train_dataset"] == "asvspoof") & (df["feature"] == "wav2vec2")]
+    rows = []
+    for ch in CHANNEL_ORDER:
+        row = [CHANNEL_LABELS[ch]]
+        for generator in ("xtts_v2", "your_tts"):
+            for regime in ("clean", "augmented"):
+                r = df[(df["generator"] == generator) & (df["regime"] == regime) & (df["channel"] == ch)]
+                row.append(_eer_ci(r.iloc[0]) if len(r) else "—")
+        rows.append(row)
+    _table_image(
+        6, f"Português (MLS): EER [95%] por sintetizador, {W2V} treinado no ASVspoof 2019, sem retreino.",
+        ["Canal", "XTTS v2 · limpo", "XTTS v2 · augm.", "YourTTS · limpo", "YourTTS · augm."],
+        rows, "tabela6_portugues.png",
+        col_widths=[0.2, 0.2, 0.2, 0.2, 0.2], width_in=12,
+    )
+
+
+def tabela7_latencia() -> None:
+    lat = _read("latency.csv")
+    quality = _read("latency_quality.csv").set_index("precisao")["eer_dev_clean"]
+    rows = [
+        [r["arquitetura"], _num(r["mediana_ms"], 0), _num(r["p95_ms"], 0), _num(r["fator_tempo_real_p95"], 2),
+         "sim" if r["cabe_em_paralelo_1s"] else "não", "sim" if r["cabe_no_caminho_da_voz_150ms"] else "não"]
+        for _, r in lat.iterrows()
+    ]
+    _table_image(
+        7, f"Latência por janela de 1s (CPU de notebook). EER no dev do ASVspoof, canal limpo: float32 {_num(quality.get('float32'))}, int8 {_num(quality.get('int8'))}.",
+        ["Arquitetura", "Mediana (ms)", "p95 (ms)", "Fator tempo real", "Em paralelo (<1s)", "No caminho da voz (<150ms)"],
+        rows, "tabela7_latencia.png",
+        col_widths=[0.34, 0.1, 0.09, 0.12, 0.15, 0.2], width_in=14,
+    )
+
+
+def tabela8_decisao_por_ligacao() -> None:
+    df = _read("call_level_table.csv")
+    df = df[df["regime"] == "augmented"]
+    seconds = [1, 3, 10, 30]
+    rows = []
+    for feature, label in (("mfcc", "MFCC"), ("wav2vec2", W2V)):
+        for ch in ("clean", "vonr", "vonr_loss"):
+            sub = df[(df["feature"] == feature) & (df["channel"] == ch)].set_index("seconds")
+            row = [f"{label} · {CHANNEL_LABELS[ch].rstrip('*')}"]
+            row += [_num(sub["eer"].get(s)) for s in seconds]
+            row += [_pct(sub["detection_at_5pct_false_alarm"].get(s)) for s in (1, 30)]
+            rows.append(row)
+    _table_image(
+        8, "Decisão por ligação (DEEP-VOICE, LOSO, augmentado): EER após N segundos de fala e detecção com 5% de alarme falso.",
+        ["Modelo · canal", "EER 1s", "EER 3s", "EER 10s", "EER 30s", "Detecção 1s", "Detecção 30s"],
+        rows, "tabela8_decisao_por_ligacao.png",
+        col_widths=[0.34, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11], width_in=12,
+    )
+
+
+TABLES = [
+    tabela1_datasets, tabela2_eer_principal, tabela3_asvspoof_detalhe, tabela4_teste_ao_vivo,
+    tabela5_asvspoof2021, tabela6_portugues, tabela7_latencia, tabela8_decisao_por_ligacao,
+]
 
 
 def main() -> None:
     FIG_DIR.mkdir(parents=True, exist_ok=True)
-    tabela1_dataset_comparativo()
-    tabela2_eer_mic_deepvoice()
-    tabela3_eer_asvspoof_canais()
-    tabela4_teste_ao_vivo()
-    print(f"4 tabelas salvas em {FIG_DIR}/")
+    for table_fn in TABLES:
+        try:
+            table_fn()
+        except FileNotFoundError as err:
+            print(f"Pulando {table_fn.__name__}: falta {err.filename} (etapa ainda não rodada)")
 
 
 if __name__ == "__main__":

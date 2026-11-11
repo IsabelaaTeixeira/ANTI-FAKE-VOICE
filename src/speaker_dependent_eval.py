@@ -1,65 +1,76 @@
-"""Avalia o modelo final (models/mfcc_rf_final.joblib, treinado com TODOS
-os dados) nas próprias vozes que estavam no treino — ideia 1 da usuária.
+"""Locutor conhecido, trecho novo: quanto o detector melhora quando já ouviu
+a voz da pessoa durante o treino — o contraponto do LOSO (locutor nunca visto).
 
-Diferente do LOSO (etapas 5-6), aqui o modelo JÁ viu a voz da pessoa
-durante o treino. Serve como "teto" de desempenho: ajuda a separar quanto
-da queda vista no LOSO é por causa do canal (GSM/VoLTE/VoNR) e quanto é
-por não conhecer a pessoa.
+Cada gravação é dividida no tempo: as primeiras 70% janelas vão para o
+treino, as 5% seguintes são descartadas (separação, para nenhuma janela de
+teste ficar colada numa de treino) e as 25% finais vão para o teste. Assim
+o modelo conhece todos os locutores, mas é avaliado em trechos de fala que
+nunca viu. (Avaliar nas próprias janelas de treino, como numa versão
+anterior deste script, mede só memorização: uma Random Forest acerta 100%
+do que decorou.)
 
-AVISO METODOLÓGICO: isso é desempenho sobre dados que estavam no conjunto
-de treino, não um teste de generalização — os números saem mais altos que
-o LOSO por natureza. Serve como referência de teto, não para comparar
-"qual modelo é melhor" com a tabela da etapa 5.
+Treina no regime augmented (canais de treino de train.py) e testa em todos
+os canais, para os dois atributos.
 
 Uso:
     python -m src.speaker_dependent_eval
 """
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-import joblib
-from sklearn.metrics import f1_score, roc_curve
+from sklearn.metrics import balanced_accuracy_score
 
-from src.features import META_COLS, MFCC_OUT
+from src.evaluate import bootstrap_eer_ci, eer
+from src.features import load_mfcc, load_wav2vec2
+from src.train import label_vector, make_classifier, regime_mask
 
-MODEL_PATH = "models/mfcc_rf_final.joblib"
-SPEAKERS = ["taylor", "biden", "ryan"]
+OUT_PATH = Path("results/speaker_dependent_table.csv")
+TRAIN_FRACTION = 0.70
+GAP_FRACTION = 0.05
 
 
-def eer(y_true: np.ndarray, y_score: np.ndarray) -> float:
-    fpr, tpr, _ = roc_curve(y_true, y_score)
-    fnr = 1 - tpr
-    idx = int(np.nanargmin(np.abs(fpr - fnr)))
-    return float((fpr[idx] + fnr[idx]) / 2)
+def temporal_split(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    n_windows = df.groupby("source_file")["window_index"].transform("max") + 1
+    position = df["window_index"] / n_windows
+    is_train = (position < TRAIN_FRACTION).values
+    is_test = (position >= TRAIN_FRACTION + GAP_FRACTION).values
+    return is_train, is_test
+
+
+def evaluate_feature(feature_name: str) -> list[dict]:
+    df, X = load_mfcc("deepvoice") if feature_name == "mfcc" else load_wav2vec2("deepvoice")
+    y = label_vector(df)
+    is_train, is_test = temporal_split(df)
+    train_mask = regime_mask("augmented", df["channel"].values, is_train)
+    clf = make_classifier(feature_name).fit(X[train_mask], y[train_mask])
+
+    test = df[is_test].assign(label=y[is_test], proba=clf.predict_proba(X[is_test])[:, 1])
+    speakers = sorted({sp for row in df["speakers"].str.split(",") for sp in row})
+    rows = []
+    for channel, g in test.groupby("channel"):
+        groups = {"todos": g, **{sp: g[g["speakers"].str.split(",").apply(lambda r, sp=sp: sp in r)] for sp in speakers}}
+        for speaker, sub in groups.items():
+            y_sub, proba = sub["label"].values, sub["proba"].values
+            row = {
+                "feature": feature_name, "speaker": speaker, "channel": channel, "n": len(sub),
+                "balanced_accuracy": balanced_accuracy_score(y_sub, (proba >= 0.5).astype(int)),
+                "eer": eer(y_sub, proba),
+            }
+            if speaker == "todos":
+                row["eer_ci_low"], row["eer_ci_high"] = bootstrap_eer_ci(y_sub, proba, sub["source_file"].values)
+            rows.append(row)
+    return rows
 
 
 def main() -> None:
-    clf = joblib.load(MODEL_PATH)
-    df = pd.read_csv(MFCC_OUT)
-    feat_cols = [c for c in df.columns if c not in META_COLS]
-
-    rows = []
-    for speaker in SPEAKERS:
-        sub_speaker = df[df["speakers"].str.contains(speaker)]
-        for channel, sub in sub_speaker.groupby("channel"):
-            X = sub[feat_cols].values
-            y = (sub["label"] == "fake").astype(int).values
-            proba = clf.predict_proba(X)[:, 1]
-            pred = (proba >= 0.5).astype(int)
-            rows.append({
-                "speaker": speaker,
-                "channel": channel,
-                "n": len(sub),
-                "accuracy": (pred == y).mean(),
-                "f1": f1_score(y, pred, pos_label=1, zero_division=0),
-                "eer": eer(y, proba),
-            })
-
-    table = pd.DataFrame(rows).sort_values(["speaker", "channel"]).reset_index(drop=True)
-    out_path = "results/speaker_dependent_table.csv"
-    table.to_csv(out_path, index=False)
+    table = pd.DataFrame(evaluate_feature("mfcc") + evaluate_feature("wav2vec2"))
+    table = table.sort_values(["feature", "speaker", "channel"]).reset_index(drop=True)
+    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    table.to_csv(OUT_PATH, index=False)
     pd.set_option("display.float_format", lambda x: f"{x:.3f}")
-    print(table.to_string(index=False))
-    print(f"\nTabela salva em {out_path}")
+    print(table[table["speaker"] == "todos"].to_string(index=False))
+    print(f"\nTabela salva em {OUT_PATH}")
 
 
 if __name__ == "__main__":

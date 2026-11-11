@@ -22,14 +22,14 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.metrics import DetCurveDisplay
 
-from src.features import DATASET_PATHS as FEATURE_PATHS, META_COLS, SR
+from src.features import DATASET_PATHS as FEATURE_PATHS, SR, W2V_LAYER, load_mfcc, load_wav2vec2
 
 PRED_PATHS = {
     "deepvoice": Path("results/cv_predictions.csv"),
     "asvspoof": Path("results/cv_predictions_asvspoof.csv"),
 }
 FIG_DIR = Path("results/figures")
-CHANNELS = ["clean", "gsm", "volte", "vonr", "mic"]
+CHANNELS = ["clean", "gsm", "volte", "vonr", "vonr_loss", "mic"]
 CHANNELED_DIR = {"deepvoice": Path("data/channeled"), "asvspoof": Path("data/channeled_asvspoof")}
 
 
@@ -59,16 +59,7 @@ def plot_det(dataset: str, out_dir: Path) -> None:
 
 
 def _load_embeddings(dataset: str, kind: str) -> tuple[np.ndarray, pd.DataFrame]:
-    paths = FEATURE_PATHS[dataset]
-    meta_cols = META_COLS + (["split", "attack_id"] if dataset == "asvspoof" else [])
-    if kind == "mfcc":
-        df = pd.read_csv(paths["mfcc_out"])
-        feat_cols = [c for c in df.columns if c not in meta_cols]
-        X = df[feat_cols].values
-        meta = df[meta_cols]
-    else:
-        meta = pd.read_csv(paths["w2v_meta_out"])
-        X = np.load(paths["w2v_array_out"])["X"]
+    meta, X = load_mfcc(dataset) if kind == "mfcc" else load_wav2vec2(dataset, W2V_LAYER)
     return X, meta.reset_index(drop=True)
 
 
@@ -85,10 +76,10 @@ def plot_tsne(dataset: str, out_dir: Path, n_sample: int = 3000, seed: int = 42)
         emb = TSNE(n_components=2, init="pca", perplexity=30, random_state=seed).fit_transform(X_sub)
 
         if dataset == "deepvoice":
-            color_by = [("channel", meta_sub["channel"]), ("locutor", meta_sub["speakers"])]
+            color_by = [("canal", meta_sub["channel"]), ("locutor", meta_sub["speakers"])]
         else:
             known = meta_sub["split"].map({"train": "conhecido (treino)", "dev": "desconhecido (dev)", "eval": "desconhecido (eval)"})
-            color_by = [("channel", meta_sub["channel"]), ("locutor: conhecido x desconhecido", known)]
+            color_by = [("canal", meta_sub["channel"]), ("locutor: conhecido x desconhecido", known)]
 
         fig, axes = plt.subplots(1, len(color_by), figsize=(8.5 * len(color_by), 6))
         if len(color_by) == 1:
@@ -103,7 +94,7 @@ def plot_tsne(dataset: str, out_dir: Path, n_sample: int = 3000, seed: int = 42)
                        for i in range(n_cats)]
             ax.legend(handles, list(cats.cat.categories), loc="upper left", bbox_to_anchor=(1.02, 1),
                       fontsize=7, markerscale=1.1, ncol=1 if n_cats <= 12 else 2)
-            ax.set_title(f"t-SNE {kind} · colorido por {label}")
+            ax.set_title(f"t-SNE {kind}{f' (camada {W2V_LAYER})' if kind == 'wav2vec2' else ''} · colorido por {label}")
             ax.set_xticks([]); ax.set_yticks([])
         fig.tight_layout()
         out_path = out_dir / f"tsne_{kind}.png"
