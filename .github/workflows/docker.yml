@@ -1,0 +1,59 @@
+name: Docker
+
+# Constrói a imagem com o FFmpeg (AMR-NB e AMR-WB) e o codec de referência EVS da
+# 3GPP, e roda nela os testes de integração dos codecs. A compilação leva alguns
+# minutos, então este workflow só roda quando algo relacionado muda, ou na mão
+# (aba Actions > Docker > Run workflow).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - requirements-test.txt
+      - src/channel_sim.py
+      - tests/test_codecs.py
+      - .github/workflows/docker.yml
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - requirements-test.txt
+      - src/channel_sim.py
+      - tests/test_codecs.py
+      - .github/workflows/docker.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codecs:
+    name: Imagem com FFmpeg AMR e EVS
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Construir a imagem
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: test
+          load: true
+          tags: anti-fake-voice:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Conferir a cadeia de codecs
+        run: docker run --rm anti-fake-voice:test
+
+      - name: Testes de integração dos codecs
+        run: docker run --rm anti-fake-voice:test python -m pytest -m codecs -p no:cacheprovider

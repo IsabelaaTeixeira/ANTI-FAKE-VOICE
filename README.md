@@ -1,5 +1,8 @@
 # ANTI-FAKE-VOICE: Detecção de Deepfakes de Voz em Streaming na Borda (MEC) e Robustez ao Codec 5G (VoNR/EVS)
 
+[![CI](https://github.com/IsabelaaTeixeira/ANTI-FAKE-VOICE/actions/workflows/ci.yml/badge.svg)](https://github.com/IsabelaaTeixeira/ANTI-FAKE-VOICE/actions/workflows/ci.yml)
+[![Docker](https://github.com/IsabelaaTeixeira/ANTI-FAKE-VOICE/actions/workflows/docker.yml/badge.svg)](https://github.com/IsabelaaTeixeira/ANTI-FAKE-VOICE/actions/workflows/docker.yml)
+
 Projeto de pesquisa acadêmica que investiga duas perguntas:
 
 1. **Um classificador de voz clonada erra mais quando o áudio passa por um canal de
@@ -173,6 +176,51 @@ Todo o projeto roda em CPU, sem GPU. O pipeline completo leva pouco mais de um d
 de processamento num notebook. A maior parte desse tempo é a extração de atributos
 do Wav2Vec2 e a clonagem com o XTTS v2.
 
+## Docker
+
+Em vez de compilar o FFmpeg e o codec EVS à mão, a imagem faz isso por você: baixa o
+FFmpeg 7.1.1 (com AMR-NB e AMR-WB) e o código de referência do EVS (3GPP TS 26.443
+v13.3.0) das fontes oficiais, confere o checksum de cada um, compila e deixa os
+binários nos caminhos que `src/channel_sim.py` espera.
+
+```bash
+docker build --target test -t anti-fake-voice .
+docker run --rm anti-fake-voice                                      # confere a cadeia de codecs
+docker run --rm anti-fake-voice python -m pytest -m codecs           # testes de integração
+```
+
+O alvo `pipeline` acrescenta o PyTorch (CPU) e as demais dependências do pipeline, menos
+o `coqui-tts`, que continua num ambiente separado (veja acima). Os dados ficam fora da
+imagem; monte a pasta com `-v "$PWD/data:/app/data"`.
+
+```bash
+docker build --target pipeline -t anti-fake-voice:pipeline .
+```
+
+## Testes e CI
+
+Os testes não precisam de dataset nem de GPU. Eles cobrem as métricas (EER, intervalo por
+bootstrap agrupado por locutor, min t-DCF), a preparação dos dados, os regimes de treino,
+a garantia de que nenhum locutor de teste aparece no treino (LOSO), o classificador de
+sequência e os números das tabelas de `results/` que o artigo cita.
+
+```bash
+pip install -r requirements-test.txt
+python -m pytest -m "not torch and not codecs"       # núcleo
+pip install torch && python -m pytest tests/test_torch_models.py tests/test_hygiene.py   # rede
+```
+
+| Marcador | O que cobre | Onde roda |
+|---|---|---|
+| sem marcador | métricas, dados, treino, tabelas de resultados, higiene do repositório | CI, em Python 3.10 e 3.12 |
+| `torch` | a rede do classificador de sequência (forma, treino, checkpoint, int8) | CI, num job com PyTorch (CPU) |
+| `codecs` | FFmpeg com AMR e EVS de verdade: banda, atraso, perda de pacotes, normalização | imagem Docker |
+
+O GitHub Actions roda o lint (`ruff`) e os testes a cada push e pull request
+([ci.yml](.github/workflows/ci.yml)). A imagem com os codecs é construída e testada em
+[docker.yml](.github/workflows/docker.yml), quando algo relacionado a ela muda ou na mão.
+Há atalhos no [Makefile](Makefile) (`make test`, `make lint`, `make docker-test`).
+
 ## Onde colocar os dados
 
 ```
@@ -199,6 +247,8 @@ models/                       # modelos treinados (.joblib, não versionados)
 results/                      # tabelas-resumo (.csv, versionadas)
 results/figures/              # gráficos e tabelas em imagem (versionados)
 tools/                        # FFmpeg com AMR e codec de referência EVS, compilados
+tests/                        # testes automáticos (pytest), sem dataset nem GPU
+.github/workflows/            # CI no GitHub Actions: lint, testes e a imagem Docker
 ```
 
 ## Passo a passo

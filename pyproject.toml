@@ -1,0 +1,19 @@
+# Configuração de testes e lint. O projeto não é um pacote instalável: os
+# módulos são chamados com `python -m src.<módulo>` a partir da raiz.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+markers = [
+    "codecs: precisa do FFmpeg com AMR e do codec EVS em tools/ (veja o Dockerfile); pulado se faltarem",
+    "torch: precisa do PyTorch; pulado se não estiver instalado",
+]
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+# Só erros de sintaxe e de lógica (pyflakes). Estilo fica de fora de propósito:
+# o código de pesquisa tem linhas longas e não é o foco da verificação.
+select = ["E9", "F"]

@@ -1,0 +1,13 @@
+# Dependencias para rodar os testes e o lint (sem GPU e sem PyTorch).
+# Instalar com: pip install -r requirements-test.txt
+numpy
+pandas
+scikit-learn
+scipy
+joblib
+tqdm
+librosa
+soundfile
+matplotlib
+pytest
+ruff
