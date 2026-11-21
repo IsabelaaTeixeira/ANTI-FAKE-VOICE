@@ -122,7 +122,7 @@ def plot_spectrograms(dataset: str, out_dir: Path) -> None:
         y, _ = librosa.load(match.iloc[0]["filepath"], sr=SR, mono=True)
         mel = librosa.feature.melspectrogram(y=y, sr=SR, n_mels=64)
         mel_db = librosa.power_to_db(mel, ref=np.max)
-        img = librosa.display.specshow(mel_db, sr=SR, x_axis="time", y_axis="mel", ax=ax)
+        librosa.display.specshow(mel_db, sr=SR, x_axis="time", y_axis="mel", ax=ax)
         ax.set_title(channel)
     fig.suptitle(f"Espectrogramas comparativos · {dataset} · {example['source_file']} janela {example['window_index']}")
     fig.tight_layout()
