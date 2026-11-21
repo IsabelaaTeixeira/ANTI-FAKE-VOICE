@@ -12,6 +12,23 @@ Tudo sob a restrição de latência de um nó MEC (Multi-access Edge Computing):
 detector precisa decidir sobre cada janela de 1 segundo de áudio a tempo de
 acompanhar uma ligação ao vivo.
 
+**Autores:** Isabela Teixeira e Cerqueira, Michelle Alves Silva e João Gabriel Marques
+Pineli Chaveiro — Universidade Federal de Goiás (UFG). O artigo com os resultados
+principais, no modelo da SBC, está em [docs/artigo-sbc.pdf](docs/artigo-sbc.pdf).
+
+> **English summary.** A research project on detecting cloned (synthetic) voices in
+> mobile phone calls. Speech goes through the reference codecs of GSM (AMR-NB), VoLTE
+> (AMR-WB) and VoNR/5G (3GPP EVS, also with burst packet loss), applied to the whole
+> recording as in a real call, and is classified in 1-second windows from Wav2Vec2
+> layer-4 features, either by Logistic Regression on their mean or by a small network
+> that reads the frame sequence. Main findings: coding each second in isolation, a
+> common shortcut, nearly doubles the estimated VoNR effect for the sequence
+> classifier; training with simulated channels transfers to real telephone
+> transmission (ASVspoof 2021 LA), cutting the GSM false-alarm rate at a fixed
+> threshold from 29% to 8%; the int8 model runs in 37 ms per second of audio on a
+> laptop CPU; and, in Portuguese with current synthesizers, no model does better than
+> chance. The paper (in Portuguese) is in [docs/artigo-sbc.pdf](docs/artigo-sbc.pdf).
+
 ## Como o projeto evoluiu
 
 O projeto cresceu em etapas, e cada uma partiu do que a anterior deixou em aberto:
@@ -492,3 +509,9 @@ Os artigos que embasam o projeto são:
   em telefonia real, com os detectores oficiais como comparação.
 - **Multilingual LibriSpeech, XTTS v2 e YourTTS** — as vozes reais e os dois
   sintetizadores do conjunto em português.
+
+## Licença
+
+O código está sob a licença MIT (ver [LICENSE](LICENSE)). Os datasets (DEEP-VOICE,
+ASVspoof 2019 e 2021, Multilingual LibriSpeech) e os codecs de referência (EVS da
+3GPP, FFmpeg com AMR) não fazem parte do repositório e seguem as licenças próprias.
